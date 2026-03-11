@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ParquetRsForDotnet.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ParquetRsForDotnet.Tests.csproj" />
+  </Folder>
+  <Folder Name="/benchmarks/">
+    <Project Path="benchmarks/ParquetRsForDotnet.Benchmarks.csproj" />
+  </Folder>
+  <Folder Name="/native/" />
+</Solution>

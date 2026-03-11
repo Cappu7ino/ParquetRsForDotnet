@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <NativeProjectDir>..\native</NativeProjectDir>
+    <NativeTargetDir>$(MSBuildThisFileDirectory)bin\$(Configuration)\$(TargetFramework)\native</NativeTargetDir>
+    <NativeConfiguration Condition="'$(Configuration)' == 'Release'">release</NativeConfiguration>
+    <NativeConfiguration Condition="'$(NativeConfiguration)' == ''">debug</NativeConfiguration>
+    <NativeCargoArgs Condition="'$(Configuration)' == 'Release'">build --release</NativeCargoArgs>
+    <NativeCargoArgs Condition="'$(NativeCargoArgs)' == ''">build</NativeCargoArgs>
+    <NativeLibraryPath>$(NativeProjectDir)\target\$(NativeConfiguration)\parquet_rs_for_dotnet.dll</NativeLibraryPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="**\*.cs" Exclude="bin\**\*;obj\**\*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Apache.Arrow" Version="22.1.0" />
+  </ItemGroup>
+
+  <Target Name="BuildNativeParquetLibrary" BeforeTargets="Build">
+    <Exec Command="&quot;$(UserProfile)\.cargo\bin\cargo.exe&quot; $(NativeCargoArgs)"
+          WorkingDirectory="$(NativeProjectDir)"
+          Condition="Exists('$(UserProfile)\.cargo\bin\cargo.exe')" />
+  </Target>
+
+  <Target Name="CopyNativeParquetLibrary" AfterTargets="Build"
+          Condition="Exists('$(NativeLibraryPath)')">
+    <MakeDir Directories="$(NativeTargetDir)" />
+    <Copy SourceFiles="$(NativeLibraryPath)"
+          DestinationFiles="$(NativeTargetDir)\parquet_rs_for_dotnet.dll"
+          SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>

@@ -1,0 +1,32 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>ParquetRsForDotnet.Benchmarks</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <NativeDllSource>..\src\bin\$(Configuration)\net8.0\native\parquet_rs_for_dotnet.dll</NativeDllSource>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\src\ParquetRsForDotnet.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BenchmarkDotNet" Version="0.14.0" />
+    <PackageReference Include="ParquetSharp" Version="12.0.1" />
+  </ItemGroup>
+
+  <Target Name="CopyNativeParquetLibraryToBenchmarkOutput" AfterTargets="Build"
+          Condition="Exists('$(NativeDllSource)')">
+    <Copy SourceFiles="$(NativeDllSource)"
+          DestinationFiles="$(OutDir)parquet_rs_for_dotnet.dll"
+          SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>

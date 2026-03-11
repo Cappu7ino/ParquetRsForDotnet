@@ -1,0 +1,18 @@
+# Build outputs
+bin/
+obj/
+target/
+BenchmarkDotNet.Artifacts/
+artifacts/
+
+# Visual Studio workspace files
+.vs/
+
+# Rust/Cargo artifacts
+*.pdb
+*.dll.exp
+*.dll.lib
+
+# Diagnostics / profiling artifacts
+*.nettrace
+*.speedscope.json
