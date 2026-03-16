@@ -51,6 +51,33 @@ internal unsafe struct ParquetOutputSink
 
 [StructLayout(LayoutKind.Sequential)]
 /// <summary>
+/// Represents the managed source callback table projected into the native ABI.
+/// </summary>
+internal unsafe struct ParquetInputSource
+{
+    /// <summary>
+    /// Gets or sets the native callback used to read bytes at a given offset from the managed source.
+    /// </summary>
+    public delegate* unmanaged[Cdecl]<IntPtr, long, byte*, nuint, nuint*, int> ReadAt;
+
+    /// <summary>
+    /// Gets or sets the native callback used to retrieve the total source length.
+    /// </summary>
+    public delegate* unmanaged[Cdecl]<IntPtr, long*, int> GetLength;
+
+    /// <summary>
+    /// Gets or sets the native callback used to fetch the last source error.
+    /// </summary>
+    public delegate* unmanaged[Cdecl]<IntPtr, byte*> GetLastError;
+
+    /// <summary>
+    /// Gets or sets the opaque callback context for the source.
+    /// </summary>
+    public IntPtr Context;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+/// <summary>
 /// Represents the managed write options projected into the native ABI.
 /// </summary>
 internal struct ParquetWriteOptionsNative

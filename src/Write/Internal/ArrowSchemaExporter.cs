@@ -8,23 +8,23 @@ namespace ParquetRsForDotnet.Internal;
 /// </summary>
 internal sealed unsafe class ArrowSchemaExporter : IDisposable
 {
-    private readonly CArrowSchema* nativeSchema;
+    private readonly CArrowSchema* _nativeSchema;
 
     public ArrowSchemaExporter(Schema schema)
     {
         ArgumentNullException.ThrowIfNull(schema);
 
-        nativeSchema = CArrowSchema.Create();
-        CArrowSchemaExporter.ExportSchema(schema, nativeSchema);
+        _nativeSchema = CArrowSchema.Create();
+        CArrowSchemaExporter.ExportSchema(schema, _nativeSchema);
     }
 
-    public CArrowSchema* NativeSchema => nativeSchema;
+    public CArrowSchema* NativeSchema => _nativeSchema;
 
     public void Dispose()
     {
-        if (nativeSchema != null)
+        if (_nativeSchema != null)
         {
-            CArrowSchema.Free(nativeSchema);
+            CArrowSchema.Free(_nativeSchema);
         }
     }
 }

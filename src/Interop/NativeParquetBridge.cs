@@ -110,6 +110,169 @@ internal static unsafe class NativeParquetBridge
         }
     }
 
+    internal static IntPtr OpenFileReader(ManagedParquetSource source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+
+        NativeError error = default;
+        var nativeSource = source.NativeSource;
+        IntPtr reader = IntPtr.Zero;
+
+        try
+        {
+            var result = parquet_file_reader_open(&nativeSource, &reader, &error);
+            if (result == 0)
+            {
+                return reader;
+            }
+
+            throw CreateException(result, error.Message);
+        }
+        catch (DllNotFoundException ex)
+        {
+            throw new NativeParquetException(NativeErrorCode.NativeLibraryNotFound, ex.Message);
+        }
+    }
+
+    internal static Schema GetFileReaderSchema(IntPtr reader)
+    {
+        NativeError error = default;
+        var nativeSchema = CArrowSchema.Create();
+
+        try
+        {
+            var result = parquet_file_reader_get_schema(reader, nativeSchema, &error);
+            if (result == 0)
+            {
+                return ArrowSchemaImporter.Import(nativeSchema);
+            }
+
+            throw CreateException(result, error.Message);
+        }
+        catch (DllNotFoundException ex)
+        {
+            throw new NativeParquetException(NativeErrorCode.NativeLibraryNotFound, ex.Message);
+        }
+        finally
+        {
+            CArrowSchema.Free(nativeSchema);
+        }
+    }
+
+    internal static int GetFileReaderRowGroupCount(IntPtr reader)
+    {
+        NativeError error = default;
+        var rowGroupCount = 0;
+
+        try
+        {
+            var result = parquet_file_reader_get_row_group_count(reader, &rowGroupCount, &error);
+            if (result == 0)
+            {
+                return rowGroupCount;
+            }
+
+            throw CreateException(result, error.Message);
+        }
+        catch (DllNotFoundException ex)
+        {
+            throw new NativeParquetException(NativeErrorCode.NativeLibraryNotFound, ex.Message);
+        }
+    }
+
+    internal static IntPtr OpenRowGroupReader(IntPtr reader, int rowGroupIndex)
+    {
+        NativeError error = default;
+        IntPtr rowGroupReader = IntPtr.Zero;
+
+        try
+        {
+            var result = parquet_file_reader_open_row_group(reader, rowGroupIndex, &rowGroupReader, &error);
+            if (result == 0)
+            {
+                return rowGroupReader;
+            }
+
+            throw CreateException(result, error.Message);
+        }
+        catch (DllNotFoundException ex)
+        {
+            throw new NativeParquetException(NativeErrorCode.NativeLibraryNotFound, ex.Message);
+        }
+    }
+
+    internal static long GetRowGroupReaderRowCount(IntPtr rowGroupReader)
+    {
+        NativeError error = default;
+        long rowCount = 0;
+
+        try
+        {
+            var result = parquet_row_group_reader_get_row_count(rowGroupReader, &rowCount, &error);
+            if (result == 0)
+            {
+                return rowCount;
+            }
+
+            throw CreateException(result, error.Message);
+        }
+        catch (DllNotFoundException ex)
+        {
+            throw new NativeParquetException(NativeErrorCode.NativeLibraryNotFound, ex.Message);
+        }
+    }
+
+    internal static IArrowArray ReadColumn(IntPtr rowGroupReader, Field field)
+    {
+        ArgumentNullException.ThrowIfNull(field);
+
+        NativeError error = default;
+        var nativeArray = CArrowArray.Create();
+
+        try
+        {
+            var result = parquet_row_group_reader_read_column(rowGroupReader, field.Name, nativeArray, &error);
+            if (result == 0)
+            {
+                return ArrowArrayImporter.Import(nativeArray, field.DataType);
+            }
+
+            throw CreateException(result, error.Message);
+        }
+        catch (DllNotFoundException ex)
+        {
+            throw new NativeParquetException(NativeErrorCode.NativeLibraryNotFound, ex.Message);
+        }
+        finally
+        {
+            CArrowArray.Free(nativeArray);
+        }
+    }
+
+    internal static void DisposeRowGroupReader(IntPtr rowGroupReader)
+    {
+        try
+        {
+            parquet_row_group_reader_dispose(rowGroupReader);
+        }
+        catch (DllNotFoundException ex)
+        {
+            throw new NativeParquetException(NativeErrorCode.NativeLibraryNotFound, ex.Message);
+        }
+    }
+
+    internal static void DisposeFileReader(IntPtr reader)
+    {
+        try
+        {
+            parquet_file_reader_dispose(reader);
+        }
+        catch (DllNotFoundException ex)
+        {
+            throw new NativeParquetException(NativeErrorCode.NativeLibraryNotFound, ex.Message);
+        }
+    }
+
     private static IntPtr ResolveNativeLibrary(string libraryName, Assembly assembly, DllImportSearchPath? searchPath)
     {
         if (!string.Equals(libraryName, NativeLibraryBaseName, StringComparison.Ordinal))
@@ -232,6 +395,50 @@ internal static unsafe class NativeParquetBridge
 
     [DllImport("parquet_rs_for_dotnet", CallingConvention = CallingConvention.Cdecl)]
     private static extern void parquet_file_writer_dispose(IntPtr writer);
+
+    [DllImport("parquet_rs_for_dotnet", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int parquet_file_reader_open(
+        ParquetInputSource* source,
+        IntPtr* reader,
+        NativeError* error);
+
+    [DllImport("parquet_rs_for_dotnet", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int parquet_file_reader_get_schema(
+        IntPtr reader,
+        CArrowSchema* schema,
+        NativeError* error);
+
+    [DllImport("parquet_rs_for_dotnet", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int parquet_file_reader_get_row_group_count(
+        IntPtr reader,
+        int* rowGroupCount,
+        NativeError* error);
+
+    [DllImport("parquet_rs_for_dotnet", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int parquet_file_reader_open_row_group(
+        IntPtr reader,
+        int rowGroupIndex,
+        IntPtr* rowGroupReader,
+        NativeError* error);
+
+    [DllImport("parquet_rs_for_dotnet", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int parquet_row_group_reader_get_row_count(
+        IntPtr rowGroupReader,
+        long* rowCount,
+        NativeError* error);
+
+    [DllImport("parquet_rs_for_dotnet", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int parquet_row_group_reader_read_column(
+        IntPtr rowGroupReader,
+        [MarshalAs(UnmanagedType.LPUTF8Str)] string columnName,
+        CArrowArray* array,
+        NativeError* error);
+
+    [DllImport("parquet_rs_for_dotnet", CallingConvention = CallingConvention.Cdecl)]
+    private static extern void parquet_row_group_reader_dispose(IntPtr rowGroupReader);
+
+    [DllImport("parquet_rs_for_dotnet", CallingConvention = CallingConvention.Cdecl)]
+    private static extern void parquet_file_reader_dispose(IntPtr reader);
 
     internal static NativeOptionScope CreateNativeOptionScope(ParquetWriteOptions options)
     {

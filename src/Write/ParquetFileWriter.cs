@@ -8,11 +8,11 @@ namespace ParquetRsForDotnet;
 /// </summary>
 public sealed class ParquetFileWriter : IDisposable
 {
-    private readonly ArrowRecordBatchBuilder batchBuilder;
-    private readonly ManagedParquetSink sink;
-    private IntPtr nativeWriter;
-    private bool finished;
-    private bool disposed;
+    private readonly ArrowRecordBatchBuilder _batchBuilder;
+    private readonly ManagedParquetSink _sink;
+    private IntPtr _nativeWriter;
+    private bool _finished;
+    private bool _disposed;
 
     /// <summary>
     /// Initializes a new appendable parquet file writer.
@@ -26,9 +26,9 @@ public sealed class ParquetFileWriter : IDisposable
         ArgumentNullException.ThrowIfNull(schema);
 
         var effectiveOptions = ParquetWriteOptionsDefaults.ApplyForBatchWriter(options ?? new ParquetWriteOptions());
-        batchBuilder = new ArrowRecordBatchBuilder(schema, effectiveOptions);
-        sink = new ManagedParquetSink(output);
-        nativeWriter = NativeParquetBridge.CreateFileWriter(batchBuilder.ArrowSchema, sink, effectiveOptions);
+        _batchBuilder = new ArrowRecordBatchBuilder(schema, effectiveOptions);
+        _sink = new ManagedParquetSink(output);
+        _nativeWriter = NativeParquetBridge.CreateFileWriter(_batchBuilder.ArrowSchema, _sink, effectiveOptions);
     }
 
     /// <summary>
@@ -47,11 +47,11 @@ public sealed class ParquetFileWriter : IDisposable
     /// <param name="columns">The batch columns in schema order.</param>
     public void WriteBatch(IReadOnlyList<System.Array> columns)
     {
-        ObjectDisposedException.ThrowIf(disposed, this);
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ThrowIfFinished();
 
-        var recordBatch = batchBuilder.Build(columns);
-        NativeParquetBridge.WriteBatch(nativeWriter, recordBatch);
+        var recordBatch = _batchBuilder.Build(columns);
+        NativeParquetBridge.WriteBatch(_nativeWriter, recordBatch);
     }
 
     /// <summary>
@@ -70,11 +70,11 @@ public sealed class ParquetFileWriter : IDisposable
     /// <param name="columns">The batch columns in schema order.</param>
     public void WriteBatch(IReadOnlyList<IArrowArray> columns)
     {
-        ObjectDisposedException.ThrowIf(disposed, this);
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ThrowIfFinished();
 
-        var recordBatch = batchBuilder.Build(columns);
-        NativeParquetBridge.WriteBatch(nativeWriter, recordBatch);
+        var recordBatch = _batchBuilder.Build(columns);
+        NativeParquetBridge.WriteBatch(_nativeWriter, recordBatch);
     }
 
     /// <summary>
@@ -82,11 +82,11 @@ public sealed class ParquetFileWriter : IDisposable
     /// </summary>
     public void Finish()
     {
-        ObjectDisposedException.ThrowIf(disposed, this);
+        ObjectDisposedException.ThrowIf(_disposed, this);
         ThrowIfFinished();
 
-        NativeParquetBridge.FinishFileWriter(nativeWriter);
-        finished = true;
+        NativeParquetBridge.FinishFileWriter(_nativeWriter);
+        _finished = true;
     }
 
     /// <summary>
@@ -94,36 +94,36 @@ public sealed class ParquetFileWriter : IDisposable
     /// </summary>
     public void Dispose()
     {
-        if (disposed)
+        if (_disposed)
         {
             return;
         }
 
-        disposed = true;
+        _disposed = true;
 
         try
         {
-            if (nativeWriter != IntPtr.Zero)
+            if (_nativeWriter != IntPtr.Zero)
             {
-                if (!finished)
+                if (!_finished)
                 {
-                    NativeParquetBridge.FinishFileWriter(nativeWriter);
-                    finished = true;
+                    NativeParquetBridge.FinishFileWriter(_nativeWriter);
+                    _finished = true;
                 }
 
-                NativeParquetBridge.DisposeFileWriter(nativeWriter);
-                nativeWriter = IntPtr.Zero;
+                NativeParquetBridge.DisposeFileWriter(_nativeWriter);
+                _nativeWriter = IntPtr.Zero;
             }
         }
         finally
         {
-            sink.Dispose();
+            _sink.Dispose();
         }
     }
 
     private void ThrowIfFinished()
     {
-        if (finished)
+        if (_finished)
         {
             throw new InvalidOperationException("Parquet file writer has already been finished.");
         }

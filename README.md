@@ -1,13 +1,11 @@
 # ParquetRsForDotnet
 
-`ParquetRsForDotnet` is a .NET 8 library for writing parquet data through Rust `arrow-rs` and `parquet-rs` with an explicit batch-oriented API.
+`ParquetRsForDotnet` is a .NET 8 library for reading and writing parquet data through Rust `arrow-rs` and `parquet-rs` with explicit Arrow-native APIs.
 
-The library focuses on one write model:
+The library focuses on two Arrow-native models:
 
-- define an explicit `ParquetSchema`
-- create a `ParquetFileWriter`
-- append one or more batches in strict schema order
-- write parquet bytes directly into a destination `Stream`
+- define an explicit `ParquetSchema` and append write batches through `ParquetFileWriter`
+- open a parquet file through `ParquetFileReader`, then read columns from explicit row-group readers
 
 ## Repository Layout
 
@@ -23,21 +21,33 @@ At a high level, the library splits responsibility across managed and native lay
   - validates the public schema and incoming batches
   - materializes CLR arrays into Arrow arrays when needed
   - exports Arrow schema and record batches through Arrow C Data
+  - imports Arrow schema and arrays from native reads
+  - exposes a seekable source callback table over a managed `Stream`
   - exposes a sink callback table over a managed `Stream`
 - native Rust (`native/`)
-  - imports Arrow schema and record batches via Arrow FFI
+  - imports Arrow schema and record batches via Arrow FFI for writes
+  - exports Arrow schema and arrays via Arrow FFI for reads
   - writes parquet using `parquet::arrow::ArrowWriter`
-  - streams parquet bytes directly into the managed sink callbacks
+  - reads parquet using `parquet-rs` Arrow readers with row-group/column projection
+  - streams parquet bytes through managed sink/source callbacks
 
 Data flow:
 
 ```text
+Write:
 CLR arrays / IArrowArray
     -> managed batch validation/materialization
     -> Arrow C Data export
     -> Rust Arrow FFI import
     -> parquet-rs writer
     -> managed Stream sink
+
+Read:
+managed Stream source callbacks
+    -> parquet-rs reader
+    -> Arrow C Data export
+    -> managed Arrow import
+    -> IArrowArray
 ```
 
 ## Public API
@@ -56,6 +66,26 @@ public sealed class ParquetFileWriter : IDisposable
     public void WriteBatch(IReadOnlyList<IArrowArray> columns);
 
     public void Finish();
+}
+
+public sealed class ParquetFileReader : IDisposable
+{
+    public ParquetFileReader(Stream input);
+
+    public ParquetSchema Schema { get; }
+    public int RowGroupCount { get; }
+
+    public ParquetRowGroupReader OpenRowGroupReader(int rowGroupIndex);
+}
+
+public sealed class ParquetRowGroupReader : IDisposable
+{
+    public int RowGroupIndex { get; }
+    public long RowCount { get; }
+    public int ColumnCount { get; }
+
+    public IArrowArray ReadColumn(int columnIndex);
+    public IArrowArray ReadColumn(string columnName);
 }
 ```
 
@@ -187,6 +217,23 @@ using var timestamps = new TimestampArray.Builder(new TimestampType(TimeUnit.Mil
 writer.WriteBatch(ids, timestamps);
 ```
 
+### Arrow-native row-group column read
+
+```csharp
+using var input = File.OpenRead("arrow-batches.parquet");
+using var reader = new ParquetFileReader(input);
+using var rowGroup = reader.OpenRowGroupReader(0);
+
+var idColumn = (Int32Array)rowGroup.ReadColumn(0);
+var eventTimeColumn = (TimestampArray)rowGroup.ReadColumn("eventTime");
+```
+
+Notes:
+
+- v1 read APIs are Arrow-native only
+- input streams must be seekable
+- reads are explicit by row group, then by column
+
 ## Build And Test
 
 Managed builds automatically invoke `cargo build` for the native writer when the Rust toolchain is available at `%USERPROFILE%\.cargo\bin`.
@@ -237,13 +284,15 @@ Current coverage includes:
 - Arrow-array batch writes
 - multi-batch writes
 - temporal and decimal writes
+- Arrow-native row-group column reads
 - schema/type validation
 - native sink behavior
+- native/source reader behavior
 - Rust-side option and writer tests
 
 ## Contributor Notes
 
-For implementation details, ownership rules, and extension points, see `docs/write-architecture.md`.
+For implementation details, ownership rules, and extension points, see `docs/read-write-architecture.md`.
 
 ## Notes
 

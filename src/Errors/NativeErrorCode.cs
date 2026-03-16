@@ -46,7 +46,7 @@ public enum NativeErrorCode
     ParquetEncodeFailed = 7,
 
     /// <summary>
-    /// The native writer trapped an unexpected panic.
+    /// The native layer trapped an unexpected panic.
     /// </summary>
     InternalPanic = 8,
 
@@ -54,4 +54,9 @@ public enum NativeErrorCode
     /// The managed runtime could not locate the native parquet library.
     /// </summary>
     NativeLibraryNotFound = 9,
+
+    /// <summary>
+    /// The managed input source failed while serving parquet bytes to the native reader.
+    /// </summary>
+    SourceReadFailed = 10,
 }

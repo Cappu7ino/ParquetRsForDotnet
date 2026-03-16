@@ -1,18 +1,22 @@
 use std::ffi::{c_char, c_void, CStr, CString};
-use std::io::{self, Write};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::panic::{self, AssertUnwindSafe};
 use std::ptr;
 use std::sync::Arc;
 
-use arrow::array::StructArray;
+use arrow::array::{ArrayRef, StructArray};
 use arrow::ffi::{from_ffi, FFI_ArrowArray};
 use arrow_array::RecordBatch;
 use arrow_schema::ffi::FFI_ArrowSchema;
 use arrow_schema::Schema;
+use bytes::Bytes;
+use parquet::arrow::arrow_reader::{ArrowReaderMetadata, ParquetRecordBatchReaderBuilder};
 use parquet::arrow::arrow_writer::ArrowWriter;
+use parquet::arrow::ProjectionMask;
 use parquet::basic::Compression;
 use parquet::file::metadata::KeyValue;
 use parquet::file::properties::{EnabledStatistics, WriterProperties};
+use parquet::file::reader::{ChunkReader, Length};
 
 const SUCCESS: i32 = 0;
 const INVALID_ARGUMENT: i32 = 1;
@@ -20,12 +24,27 @@ const ARROW_IMPORT_FAILED: i32 = 5;
 const SINK_WRITE_FAILED: i32 = 6;
 const PARQUET_ENCODE_FAILED: i32 = 7;
 const INTERNAL_PANIC: i32 = 8;
+const SOURCE_READ_FAILED: i32 = 10;
 const DEFAULT_MAX_ROW_GROUP_ROW_COUNT: usize = 8 * 1024;
 
 struct FileWriterHandle {
     writer: ArrowWriter<SinkWriter>,
     schema: Arc<Schema>,
     finished: bool,
+}
+
+struct FileReaderHandle {
+    source: SourceChunkReader,
+    metadata: ArrowReaderMetadata,
+    schema: Arc<Schema>,
+}
+
+struct RowGroupReaderHandle {
+    source: SourceChunkReader,
+    metadata: ArrowReaderMetadata,
+    schema: Arc<Schema>,
+    row_group_index: usize,
+    row_count: i64,
 }
 
 #[repr(C)]
@@ -63,6 +82,14 @@ pub struct ParquetOutputSink {
     pub context: *mut c_void,
 }
 
+#[repr(C)]
+pub struct ParquetInputSource {
+    pub read_at: Option<unsafe extern "C" fn(*mut c_void, i64, *mut u8, usize, *mut usize) -> i32>,
+    pub get_length: Option<unsafe extern "C" fn(*mut c_void, *mut i64) -> i32>,
+    pub get_last_error: Option<unsafe extern "C" fn(*mut c_void) -> *const c_char>,
+    pub context: *mut c_void,
+}
+
 #[derive(Debug)]
 struct FfiFailure {
     code: i32,
@@ -85,6 +112,24 @@ struct SinkWriter {
     get_last_error_callback: Option<unsafe extern "C" fn(*mut c_void) -> *const c_char>,
     context: usize,
     failed: bool,
+}
+
+#[derive(Clone)]
+struct SourceReader {
+    read_at_callback: unsafe extern "C" fn(*mut c_void, i64, *mut u8, usize, *mut usize) -> i32,
+    get_last_error_callback: Option<unsafe extern "C" fn(*mut c_void) -> *const c_char>,
+    context: usize,
+    length: u64,
+}
+
+struct SourceReadHandle {
+    source: Arc<SourceReader>,
+    offset: u64,
+}
+
+#[derive(Clone)]
+struct SourceChunkReader {
+    inner: Arc<SourceReader>,
 }
 
 impl SinkWriter {
@@ -145,6 +190,157 @@ impl SinkWriter {
             },
             None => "no additional sink error information".to_string(),
         }
+    }
+}
+
+impl SourceReader {
+    fn new(source: &ParquetInputSource) -> Result<Self, FfiFailure> {
+        let read_at_callback = source.read_at.ok_or_else(|| {
+            FfiFailure::new(INVALID_ARGUMENT, "Source callback table is incomplete.")
+        })?;
+        let get_length_callback = source.get_length.ok_or_else(|| {
+            FfiFailure::new(INVALID_ARGUMENT, "Source callback table is incomplete.")
+        })?;
+
+        let mut length = 0i64;
+        let code = unsafe { get_length_callback(source.context, &mut length) };
+        if code != SUCCESS {
+            return Err(FfiFailure::new(
+                SOURCE_READ_FAILED,
+                format!(
+                    "Source length retrieval failed: {}",
+                    Self::last_error_static(source)
+                ),
+            ));
+        }
+
+        if length < 0 {
+            return Err(FfiFailure::new(
+                INVALID_ARGUMENT,
+                "Source length cannot be negative.",
+            ));
+        }
+
+        Ok(Self {
+            read_at_callback,
+            get_last_error_callback: source.get_last_error,
+            context: source.context as usize,
+            length: length as u64,
+        })
+    }
+
+    fn last_error(&self) -> String {
+        match self.get_last_error_callback {
+            Some(callback) => unsafe {
+                let ptr = callback(self.context as *mut c_void);
+                if ptr.is_null() {
+                    "no additional source error information".to_string()
+                } else {
+                    std::ffi::CStr::from_ptr(ptr).to_string_lossy().into_owned()
+                }
+            },
+            None => "no additional source error information".to_string(),
+        }
+    }
+
+    fn last_error_static(source: &ParquetInputSource) -> String {
+        match source.get_last_error {
+            Some(callback) => unsafe {
+                let ptr = callback(source.context);
+                if ptr.is_null() {
+                    "no additional source error information".to_string()
+                } else {
+                    std::ffi::CStr::from_ptr(ptr).to_string_lossy().into_owned()
+                }
+            },
+            None => "no additional source error information".to_string(),
+        }
+    }
+}
+
+impl Length for SourceChunkReader {
+    fn len(&self) -> u64 {
+        self.inner.length
+    }
+}
+
+impl ChunkReader for SourceChunkReader {
+    type T = SourceReadHandle;
+
+    fn get_read(&self, start: u64) -> parquet::errors::Result<Self::T> {
+        Ok(SourceReadHandle {
+            source: Arc::clone(&self.inner),
+            offset: start,
+        })
+    }
+
+    fn get_bytes(&self, start: u64, length: usize) -> parquet::errors::Result<Bytes> {
+        let mut buffer = vec![0u8; length];
+        let mut read = 0usize;
+        let code = unsafe {
+            (self.inner.read_at_callback)(
+                self.inner.context as *mut c_void,
+                start as i64,
+                buffer.as_mut_ptr(),
+                length,
+                &mut read,
+            )
+        };
+
+        if code != SUCCESS {
+            return Err(parquet::errors::ParquetError::General(format!(
+                "Source read failed: {}",
+                self.inner.last_error()
+            )));
+        }
+
+        buffer.truncate(read);
+        Ok(Bytes::from(buffer))
+    }
+}
+
+impl Read for SourceReadHandle {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let mut read = 0usize;
+        let code = unsafe {
+            (self.source.read_at_callback)(
+                self.source.context as *mut c_void,
+                self.offset as i64,
+                buf.as_mut_ptr(),
+                buf.len(),
+                &mut read,
+            )
+        };
+
+        if code != SUCCESS {
+            return Err(io::Error::new(
+                io::ErrorKind::Other,
+                self.source.last_error(),
+            ));
+        }
+
+        self.offset += read as u64;
+        Ok(read)
+    }
+}
+
+impl Seek for SourceReadHandle {
+    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+        let new_offset = match pos {
+            SeekFrom::Start(offset) => offset as i128,
+            SeekFrom::Current(offset) => self.offset as i128 + offset as i128,
+            SeekFrom::End(offset) => self.source.length as i128 + offset as i128,
+        };
+
+        if new_offset < 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Seek before start.",
+            ));
+        }
+
+        self.offset = new_offset as u64;
+        Ok(self.offset)
     }
 }
 
@@ -267,6 +463,150 @@ pub unsafe extern "C" fn parquet_file_writer_dispose(writer: *mut c_void) {
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn parquet_file_reader_open(
+    source: *const ParquetInputSource,
+    reader: *mut *mut c_void,
+    error: *mut NativeError,
+) -> i32 {
+    clear_error(error);
+
+    let result = panic::catch_unwind(AssertUnwindSafe(|| create_file_reader(source, reader)));
+    match result {
+        Ok(Ok(())) => SUCCESS,
+        Ok(Err(failure)) => set_error(error, failure.code, failure.message),
+        Err(_) => set_error(
+            error,
+            INTERNAL_PANIC,
+            "Rust parquet file reader creation panicked.",
+        ),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn parquet_file_reader_get_schema(
+    reader: *mut c_void,
+    schema: *mut FFI_ArrowSchema,
+    error: *mut NativeError,
+) -> i32 {
+    clear_error(error);
+
+    let result = panic::catch_unwind(AssertUnwindSafe(|| file_reader_get_schema(reader, schema)));
+    match result {
+        Ok(Ok(())) => SUCCESS,
+        Ok(Err(failure)) => set_error(error, failure.code, failure.message),
+        Err(_) => set_error(
+            error,
+            INTERNAL_PANIC,
+            "Rust parquet file reader schema export panicked.",
+        ),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn parquet_file_reader_get_row_group_count(
+    reader: *mut c_void,
+    row_group_count: *mut i32,
+    error: *mut NativeError,
+) -> i32 {
+    clear_error(error);
+
+    let result = panic::catch_unwind(AssertUnwindSafe(|| {
+        file_reader_get_row_group_count(reader, row_group_count)
+    }));
+    match result {
+        Ok(Ok(())) => SUCCESS,
+        Ok(Err(failure)) => set_error(error, failure.code, failure.message),
+        Err(_) => set_error(
+            error,
+            INTERNAL_PANIC,
+            "Rust parquet file reader row-group count panicked.",
+        ),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn parquet_file_reader_open_row_group(
+    reader: *mut c_void,
+    row_group_index: i32,
+    row_group_reader: *mut *mut c_void,
+    error: *mut NativeError,
+) -> i32 {
+    clear_error(error);
+
+    let result = panic::catch_unwind(AssertUnwindSafe(|| {
+        open_row_group_reader(reader, row_group_index, row_group_reader)
+    }));
+    match result {
+        Ok(Ok(())) => SUCCESS,
+        Ok(Err(failure)) => set_error(error, failure.code, failure.message),
+        Err(_) => set_error(
+            error,
+            INTERNAL_PANIC,
+            "Rust parquet row-group reader creation panicked.",
+        ),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn parquet_row_group_reader_get_row_count(
+    row_group_reader: *mut c_void,
+    row_count: *mut i64,
+    error: *mut NativeError,
+) -> i32 {
+    clear_error(error);
+
+    let result = panic::catch_unwind(AssertUnwindSafe(|| {
+        row_group_reader_get_row_count(row_group_reader, row_count)
+    }));
+    match result {
+        Ok(Ok(())) => SUCCESS,
+        Ok(Err(failure)) => set_error(error, failure.code, failure.message),
+        Err(_) => set_error(
+            error,
+            INTERNAL_PANIC,
+            "Rust parquet row-group row-count panicked.",
+        ),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn parquet_row_group_reader_read_column(
+    row_group_reader: *mut c_void,
+    column_name: *const c_char,
+    array: *mut FFI_ArrowArray,
+    error: *mut NativeError,
+) -> i32 {
+    clear_error(error);
+
+    let result = panic::catch_unwind(AssertUnwindSafe(|| {
+        row_group_reader_read_column(row_group_reader, column_name, array)
+    }));
+    match result {
+        Ok(Ok(())) => SUCCESS,
+        Ok(Err(failure)) => set_error(error, failure.code, failure.message),
+        Err(_) => set_error(
+            error,
+            INTERNAL_PANIC,
+            "Rust parquet row-group column read panicked.",
+        ),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn parquet_row_group_reader_dispose(row_group_reader: *mut c_void) {
+    if !row_group_reader.is_null() {
+        drop(Box::from_raw(row_group_reader as *mut RowGroupReaderHandle));
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn parquet_file_reader_dispose(reader: *mut c_void) {
+    if !reader.is_null() {
+        drop(Box::from_raw(reader as *mut FileReaderHandle));
+    }
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn parquet_free_string(value: *mut c_char) {
     if !value.is_null() {
         let _ = CString::from_raw(value);
@@ -320,6 +660,254 @@ unsafe fn create_file_writer(
         finished: false,
     })) as *mut c_void;
     Ok(())
+}
+
+unsafe fn create_file_reader(
+    source: *const ParquetInputSource,
+    reader: *mut *mut c_void,
+) -> Result<(), FfiFailure> {
+    if reader.is_null() {
+        return Err(FfiFailure::new(
+            INVALID_ARGUMENT,
+            "Reader output pointer is null.",
+        ));
+    }
+
+    let source = source
+        .as_ref()
+        .ok_or_else(|| FfiFailure::new(INVALID_ARGUMENT, "ParquetInputSource pointer is null."))?;
+    let source = SourceChunkReader {
+        inner: Arc::new(SourceReader::new(source)?),
+    };
+    let metadata = ArrowReaderMetadata::load(&source, Default::default()).map_err(|err| {
+        FfiFailure::new(
+            PARQUET_ENCODE_FAILED,
+            format!("Failed to load parquet metadata: {err}"),
+        )
+    })?;
+
+    let schema =
+        ParquetRecordBatchReaderBuilder::new_with_metadata(source.clone(), metadata.clone())
+            .schema()
+            .clone();
+
+    *reader = Box::into_raw(Box::new(FileReaderHandle {
+        source,
+        metadata,
+        schema,
+    })) as *mut c_void;
+    Ok(())
+}
+
+unsafe fn file_reader_get_schema(
+    reader: *mut c_void,
+    schema: *mut FFI_ArrowSchema,
+) -> Result<(), FfiFailure> {
+    if reader.is_null() {
+        return Err(FfiFailure::new(
+            INVALID_ARGUMENT,
+            "Parquet file reader pointer is null.",
+        ));
+    }
+
+    if schema.is_null() {
+        return Err(FfiFailure::new(
+            INVALID_ARGUMENT,
+            "Arrow schema pointer is null.",
+        ));
+    }
+
+    let handle = &*(reader as *mut FileReaderHandle);
+    let exported = FFI_ArrowSchema::try_from(handle.schema.as_ref()).map_err(|err| {
+        FfiFailure::new(
+            ARROW_IMPORT_FAILED,
+            format!("Failed to export Arrow schema: {err}"),
+        )
+    })?;
+
+    ptr::write(schema, exported);
+    Ok(())
+}
+
+unsafe fn file_reader_get_row_group_count(
+    reader: *mut c_void,
+    row_group_count: *mut i32,
+) -> Result<(), FfiFailure> {
+    if reader.is_null() {
+        return Err(FfiFailure::new(
+            INVALID_ARGUMENT,
+            "Parquet file reader pointer is null.",
+        ));
+    }
+
+    if row_group_count.is_null() {
+        return Err(FfiFailure::new(
+            INVALID_ARGUMENT,
+            "Row group count output pointer is null.",
+        ));
+    }
+
+    let handle = &*(reader as *mut FileReaderHandle);
+    *row_group_count = handle.metadata.metadata().num_row_groups() as i32;
+    Ok(())
+}
+
+unsafe fn open_row_group_reader(
+    reader: *mut c_void,
+    row_group_index: i32,
+    row_group_reader: *mut *mut c_void,
+) -> Result<(), FfiFailure> {
+    if reader.is_null() {
+        return Err(FfiFailure::new(
+            INVALID_ARGUMENT,
+            "Parquet file reader pointer is null.",
+        ));
+    }
+
+    if row_group_reader.is_null() {
+        return Err(FfiFailure::new(
+            INVALID_ARGUMENT,
+            "Row-group reader output pointer is null.",
+        ));
+    }
+
+    if row_group_index < 0 {
+        return Err(FfiFailure::new(
+            INVALID_ARGUMENT,
+            "Row-group index cannot be negative.",
+        ));
+    }
+
+    let handle = &*(reader as *mut FileReaderHandle);
+    let row_group_index = row_group_index as usize;
+    let row_groups = handle.metadata.metadata().row_groups();
+    let row_group = row_groups.get(row_group_index).ok_or_else(|| {
+        FfiFailure::new(
+            INVALID_ARGUMENT,
+            format!("Row-group index {row_group_index} is out of range."),
+        )
+    })?;
+
+    *row_group_reader = Box::into_raw(Box::new(RowGroupReaderHandle {
+        source: handle.source.clone(),
+        metadata: handle.metadata.clone(),
+        schema: Arc::clone(&handle.schema),
+        row_group_index,
+        row_count: row_group.num_rows(),
+    })) as *mut c_void;
+    Ok(())
+}
+
+unsafe fn row_group_reader_get_row_count(
+    row_group_reader: *mut c_void,
+    row_count: *mut i64,
+) -> Result<(), FfiFailure> {
+    if row_group_reader.is_null() {
+        return Err(FfiFailure::new(
+            INVALID_ARGUMENT,
+            "Parquet row-group reader pointer is null.",
+        ));
+    }
+
+    if row_count.is_null() {
+        return Err(FfiFailure::new(
+            INVALID_ARGUMENT,
+            "Row count output pointer is null.",
+        ));
+    }
+
+    let handle = &*(row_group_reader as *mut RowGroupReaderHandle);
+    *row_count = handle.row_count;
+    Ok(())
+}
+
+unsafe fn row_group_reader_read_column(
+    row_group_reader: *mut c_void,
+    column_name: *const c_char,
+    array: *mut FFI_ArrowArray,
+) -> Result<(), FfiFailure> {
+    if row_group_reader.is_null() {
+        return Err(FfiFailure::new(
+            INVALID_ARGUMENT,
+            "Parquet row-group reader pointer is null.",
+        ));
+    }
+
+    if column_name.is_null() {
+        return Err(FfiFailure::new(
+            INVALID_ARGUMENT,
+            "Column name pointer is null.",
+        ));
+    }
+
+    if array.is_null() {
+        return Err(FfiFailure::new(
+            INVALID_ARGUMENT,
+            "Arrow array output pointer is null.",
+        ));
+    }
+
+    let handle = &*(row_group_reader as *mut RowGroupReaderHandle);
+    let column_name = CStr::from_ptr(column_name)
+        .to_str()
+        .map_err(|_| FfiFailure::new(INVALID_ARGUMENT, "Column name is not valid UTF-8."))?;
+
+    let schema_descr = handle.metadata.metadata().file_metadata().schema_descr();
+    let column_index = handle
+        .schema
+        .fields()
+        .iter()
+        .position(|field| field.name() == column_name)
+        .ok_or_else(|| {
+            FfiFailure::new(
+                INVALID_ARGUMENT,
+                format!("Column '{column_name}' was not found."),
+            )
+        })?;
+
+    let projection = ProjectionMask::roots(schema_descr, [column_index]);
+    let mut reader = ParquetRecordBatchReaderBuilder::new_with_metadata(
+        handle.source.clone(),
+        handle.metadata.clone(),
+    )
+    .with_row_groups(vec![handle.row_group_index])
+    .with_projection(projection)
+    .with_batch_size(handle.row_count as usize)
+    .build()
+    .map_err(|err| {
+        FfiFailure::new(
+            PARQUET_ENCODE_FAILED,
+            format!("Failed to build parquet reader: {err}"),
+        )
+    })?;
+
+    let batch = reader
+        .next()
+        .transpose()
+        .map_err(|err| {
+            FfiFailure::new(
+                PARQUET_ENCODE_FAILED,
+                format!("Failed to read parquet row group: {err}"),
+            )
+        })?
+        .ok_or_else(|| {
+            FfiFailure::new(
+                PARQUET_ENCODE_FAILED,
+                "Projected parquet read returned no record batch.",
+            )
+        })?;
+
+    if batch.num_columns() != 1 {
+        return Err(FfiFailure::new(
+            PARQUET_ENCODE_FAILED,
+            format!(
+                "Projected parquet read for '{column_name}' returned {} columns instead of 1.",
+                batch.num_columns()
+            ),
+        ));
+    }
+
+    export_array(batch.column(0).clone(), array)
 }
 
 unsafe fn write_batch(writer: *mut c_void, batch: *mut FFI_ArrowArray) -> Result<(), FfiFailure> {
@@ -397,6 +985,19 @@ unsafe fn finish_file_writer(writer: *mut c_void) -> Result<(), FfiFailure> {
     handle.writer.inner_mut().close()?;
     handle.finished = true;
 
+    Ok(())
+}
+
+unsafe fn export_array(array_ref: ArrayRef, array: *mut FFI_ArrowArray) -> Result<(), FfiFailure> {
+    let data = array_ref.to_data();
+    let (ffi_array, _schema) = arrow::ffi::to_ffi(&data).map_err(|err| {
+        FfiFailure::new(
+            ARROW_IMPORT_FAILED,
+            format!("Failed to export Arrow array: {err}"),
+        )
+    })?;
+
+    ptr::write(array, ffi_array);
     Ok(())
 }
 
@@ -722,12 +1323,112 @@ mod tests {
         assert_eq!(metadata[0].value.as_deref(), Some("rust-test"));
     }
 
+    #[test]
+    fn parquet_file_reader_entrypoint_reads_row_group_column() {
+        let temp = tempfile::NamedTempFile::new().unwrap();
+        let path = temp.path().to_path_buf();
+        drop(temp);
+
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("id", DataType::Int32, true),
+            Field::new("name", DataType::Utf8, true),
+        ]));
+        let batch = RecordBatch::try_new(
+            Arc::clone(&schema),
+            vec![
+                Arc::new(Int32Array::from(vec![Some(1), None, Some(3)])),
+                Arc::new(StringArray::from(vec![
+                    Some("alpha"),
+                    Some("beta"),
+                    Some("gamma"),
+                ])),
+            ],
+        )
+        .unwrap();
+
+        {
+            let file = std::fs::File::create(&path).unwrap();
+            let writer =
+                parquet::arrow::arrow_writer::ArrowWriter::try_new(file, schema, None).unwrap();
+            let mut writer = writer;
+            writer.write(&batch).unwrap();
+            writer.finish().unwrap();
+        }
+
+        let state = Box::new(TestSourceState::from_bytes(std::fs::read(&path).unwrap()));
+        let raw_state = Box::into_raw(state);
+        let source = test_source(raw_state);
+        let mut error = NativeError {
+            code: 0,
+            message: ptr::null_mut(),
+        };
+        let mut reader_ptr: *mut c_void = ptr::null_mut();
+
+        let result = unsafe { parquet_file_reader_open(&source, &mut reader_ptr, &mut error) };
+        assert_eq!(result, SUCCESS);
+        assert!(!reader_ptr.is_null());
+
+        let mut row_group_count = 0i32;
+        let result = unsafe {
+            parquet_file_reader_get_row_group_count(reader_ptr, &mut row_group_count, &mut error)
+        };
+        assert_eq!(result, SUCCESS);
+        assert_eq!(row_group_count, 1);
+
+        let mut row_group_reader_ptr: *mut c_void = ptr::null_mut();
+        let result = unsafe {
+            parquet_file_reader_open_row_group(reader_ptr, 0, &mut row_group_reader_ptr, &mut error)
+        };
+        assert_eq!(result, SUCCESS);
+        assert!(!row_group_reader_ptr.is_null());
+
+        let mut row_count = 0i64;
+        let result = unsafe {
+            parquet_row_group_reader_get_row_count(row_group_reader_ptr, &mut row_count, &mut error)
+        };
+        assert_eq!(result, SUCCESS);
+        assert_eq!(row_count, 3);
+
+        let mut array = FFI_ArrowArray::empty();
+        let name = CString::new("name").unwrap();
+        let result = unsafe {
+            parquet_row_group_reader_read_column(
+                row_group_reader_ptr,
+                name.as_ptr(),
+                &mut array,
+                &mut error,
+            )
+        };
+        assert_eq!(result, SUCCESS);
+
+        let field = Arc::new(Field::new("name", DataType::Utf8, true));
+        let imported = unsafe {
+            from_ffi(array, &FFI_ArrowSchema::try_from(field.as_ref()).unwrap()).unwrap()
+        };
+        let string_array = StringArray::from(imported);
+        assert_eq!(string_array.value(0), "alpha");
+        assert_eq!(string_array.value(1), "beta");
+        assert_eq!(string_array.value(2), "gamma");
+
+        unsafe {
+            parquet_row_group_reader_dispose(row_group_reader_ptr);
+            parquet_file_reader_dispose(reader_ptr);
+            drop(Box::from_raw(raw_state));
+        }
+        let _ = std::fs::remove_file(path);
+    }
+
     #[derive(Default)]
     struct TestSinkState {
         bytes: Mutex<Vec<u8>>,
         error: Mutex<Option<String>>,
         partial_write_size: Mutex<Option<usize>>,
         fail_write: Mutex<bool>,
+    }
+
+    struct TestSourceState {
+        bytes: Vec<u8>,
+        error: Mutex<Option<String>>,
     }
 
     fn test_sink(
@@ -747,6 +1448,24 @@ mod tests {
             abort: Some(test_abort),
             get_last_error: Some(test_get_last_error),
             context: raw_state.cast(),
+        }
+    }
+
+    fn test_source(raw_state: *mut TestSourceState) -> ParquetInputSource {
+        ParquetInputSource {
+            read_at: Some(test_read_at),
+            get_length: Some(test_get_length),
+            get_last_error: Some(test_source_get_last_error),
+            context: raw_state.cast(),
+        }
+    }
+
+    impl TestSourceState {
+        fn from_bytes(bytes: Vec<u8>) -> Self {
+            Self {
+                bytes,
+                error: Mutex::new(None),
+            }
         }
     }
 
@@ -785,6 +1504,45 @@ mod tests {
 
     unsafe extern "C" fn test_get_last_error(context: *mut c_void) -> *const c_char {
         let state = &*(context as *mut TestSinkState);
+        if let Some(message) = state.error.lock().unwrap().clone() {
+            CString::new(message).unwrap().into_raw()
+        } else {
+            ptr::null()
+        }
+    }
+
+    unsafe extern "C" fn test_read_at(
+        context: *mut c_void,
+        offset: i64,
+        buffer: *mut u8,
+        len: usize,
+        read: *mut usize,
+    ) -> i32 {
+        let state = &*(context as *mut TestSourceState);
+        if offset < 0 {
+            *state.error.lock().unwrap() = Some("negative read offset".to_string());
+            return SOURCE_READ_FAILED;
+        }
+
+        let offset = offset as usize;
+        let available = state.bytes.len().saturating_sub(offset);
+        let to_copy = available.min(len);
+        if to_copy > 0 {
+            ptr::copy_nonoverlapping(state.bytes.as_ptr().add(offset), buffer, to_copy);
+        }
+
+        *read = to_copy;
+        SUCCESS
+    }
+
+    unsafe extern "C" fn test_get_length(context: *mut c_void, length: *mut i64) -> i32 {
+        let state = &*(context as *mut TestSourceState);
+        *length = state.bytes.len() as i64;
+        SUCCESS
+    }
+
+    unsafe extern "C" fn test_source_get_last_error(context: *mut c_void) -> *const c_char {
+        let state = &*(context as *mut TestSourceState);
         if let Some(message) = state.error.lock().unwrap().clone() {
             CString::new(message).unwrap().into_raw()
         } else {

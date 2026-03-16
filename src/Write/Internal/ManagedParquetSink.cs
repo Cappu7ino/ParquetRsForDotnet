@@ -1,5 +1,5 @@
-using System.Runtime.InteropServices;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using System.Text;
 using ParquetRsForDotnet.Interop;
 
@@ -10,11 +10,11 @@ namespace ParquetRsForDotnet.Internal;
 /// </summary>
 internal sealed unsafe class ManagedParquetSink : IDisposable
 {
-    private readonly GCHandle handle;
-    private readonly Stream destination;
-    private bool disposed;
-    private string? lastError;
-    private IntPtr lastErrorPtr;
+    private readonly GCHandle _handle;
+    private readonly Stream _destination;
+    private bool _disposed;
+    private string? _lastError;
+    private IntPtr _lastErrorPtr;
 
     /// <summary>
     /// Initializes a managed sink wrapper around the destination stream.
@@ -26,8 +26,8 @@ internal sealed unsafe class ManagedParquetSink : IDisposable
     /// </remarks>
     public ManagedParquetSink(Stream destination)
     {
-        this.destination = destination;
-        handle = GCHandle.Alloc(this);
+        _destination = destination;
+        _handle = GCHandle.Alloc(this);
         NativeSink = new ParquetOutputSink
         {
             Write = &WriteCallback,
@@ -35,7 +35,7 @@ internal sealed unsafe class ManagedParquetSink : IDisposable
             Close = &CloseCallback,
             Abort = &AbortCallback,
             GetLastError = &GetLastErrorCallback,
-            Context = GCHandle.ToIntPtr(handle),
+            Context = GCHandle.ToIntPtr(_handle),
         };
     }
 
@@ -50,21 +50,21 @@ internal sealed unsafe class ManagedParquetSink : IDisposable
     /// </remarks>
     public void Dispose()
     {
-        if (disposed)
+        if (_disposed)
         {
             return;
         }
 
-        disposed = true;
-        if (handle.IsAllocated)
+        _disposed = true;
+        if (_handle.IsAllocated)
         {
-            handle.Free();
+            _handle.Free();
         }
 
-        if (lastErrorPtr != IntPtr.Zero)
+        if (_lastErrorPtr != IntPtr.Zero)
         {
-            Marshal.FreeCoTaskMem(lastErrorPtr);
-            lastErrorPtr = IntPtr.Zero;
+            Marshal.FreeCoTaskMem(_lastErrorPtr);
+            _lastErrorPtr = IntPtr.Zero;
         }
     }
 
@@ -92,7 +92,7 @@ internal sealed unsafe class ManagedParquetSink : IDisposable
         var sink = FromContext(context);
         try
         {
-            sink.destination.Write(new ReadOnlySpan<byte>(data, checked((int)length)));
+            sink._destination.Write(new ReadOnlySpan<byte>(data, checked((int)length)));
             if (written != null)
             {
                 *written = length;
@@ -118,7 +118,7 @@ internal sealed unsafe class ManagedParquetSink : IDisposable
         var sink = FromContext(context);
         try
         {
-            sink.destination.Flush();
+            sink._destination.Flush();
             return 0;
         }
         catch (Exception ex)
@@ -139,7 +139,7 @@ internal sealed unsafe class ManagedParquetSink : IDisposable
         var sink = FromContext(context);
         try
         {
-            sink.destination.Flush();
+            sink._destination.Flush();
             return 0;
         }
         catch (Exception ex)
@@ -158,7 +158,7 @@ internal sealed unsafe class ManagedParquetSink : IDisposable
     private static int AbortCallback(IntPtr context)
     {
         var sink = FromContext(context);
-        sink.lastError ??= "Write aborted.";
+        sink._lastError ??= "Write aborted.";
         return (int)NativeErrorCode.SinkWriteFailed;
     }
 
@@ -171,18 +171,18 @@ internal sealed unsafe class ManagedParquetSink : IDisposable
     private static byte* GetLastErrorCallback(IntPtr context)
     {
         var sink = FromContext(context);
-        if (string.IsNullOrEmpty(sink.lastError))
+        if (string.IsNullOrEmpty(sink._lastError))
         {
             return null;
         }
 
-        if (sink.lastErrorPtr != IntPtr.Zero)
+        if (sink._lastErrorPtr != IntPtr.Zero)
         {
-            Marshal.FreeCoTaskMem(sink.lastErrorPtr);
+            Marshal.FreeCoTaskMem(sink._lastErrorPtr);
         }
 
-        sink.lastErrorPtr = Marshal.StringToCoTaskMemUTF8(sink.lastError);
-        return (byte*)sink.lastErrorPtr;
+        sink._lastErrorPtr = Marshal.StringToCoTaskMemUTF8(sink._lastError);
+        return (byte*)sink._lastErrorPtr;
     }
 
     /// <summary>
@@ -191,6 +191,6 @@ internal sealed unsafe class ManagedParquetSink : IDisposable
     /// <param name="message">The latest managed error message.</param>
     private void SetLastError(string message)
     {
-        lastError = message;
+        _lastError = message;
     }
 }

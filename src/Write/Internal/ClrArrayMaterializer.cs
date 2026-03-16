@@ -8,12 +8,12 @@ namespace ParquetRsForDotnet.Internal;
 
 internal sealed class ClrArrayMaterializer
 {
-    private static readonly MemoryAllocator Allocator = MemoryAllocator.Default.Value;
-    private readonly ArrowMaterializationOptions options;
+    private static readonly MemoryAllocator s_allocator = MemoryAllocator.Default.Value;
+    private readonly ArrowMaterializationOptions _options;
 
     public ClrArrayMaterializer(ArrowMaterializationOptions options)
     {
-        this.options = options ?? throw new ArgumentNullException(nameof(options));
+        _options = options ?? throw new ArgumentNullException(nameof(options));
     }
 
     public IArrowArray Materialize(System.Array data, ColumnMaterializationContext context)
@@ -62,47 +62,47 @@ internal sealed class ClrArrayMaterializer
         var builder = new BooleanArray.Builder();
         builder.Reserve(values.Length);
         builder.AppendRange(values);
-        return builder.Build(Allocator);
+        return builder.Build(s_allocator);
     }
 
     private Int8Array BuildInt8(sbyte[] values)
-        => options.UseLowLevelFixedWidth ? FixedWidthArrowArrayFactory.Build(values, Allocator) : BuildWithBuilder(values, static () => new Int8Array.Builder(), static (builder, length) => builder.Reserve(length), static (builder, value) => builder.Append(value), static builder => builder.Build(Allocator));
+        => _options.UseLowLevelFixedWidth ? FixedWidthArrowArrayFactory.Build(values, s_allocator) : BuildWithBuilder(values, static () => new Int8Array.Builder(), static (builder, length) => builder.Reserve(length), static (builder, value) => builder.Append(value), static builder => builder.Build(s_allocator));
 
     private UInt8Array BuildUInt8(byte[] values)
-        => options.UseLowLevelFixedWidth ? FixedWidthArrowArrayFactory.Build(values, Allocator) : BuildWithBuilder(values, static () => new UInt8Array.Builder(), static (builder, length) => builder.Reserve(length), static (builder, value) => builder.Append(value), static builder => builder.Build(Allocator));
+        => _options.UseLowLevelFixedWidth ? FixedWidthArrowArrayFactory.Build(values, s_allocator) : BuildWithBuilder(values, static () => new UInt8Array.Builder(), static (builder, length) => builder.Reserve(length), static (builder, value) => builder.Append(value), static builder => builder.Build(s_allocator));
 
     private Int16Array BuildInt16(short[] values)
-        => options.UseLowLevelFixedWidth ? FixedWidthArrowArrayFactory.Build(values, Allocator) : BuildWithBuilder(values, static () => new Int16Array.Builder(), static (builder, length) => builder.Reserve(length), static (builder, value) => builder.Append(value), static builder => builder.Build(Allocator));
+        => _options.UseLowLevelFixedWidth ? FixedWidthArrowArrayFactory.Build(values, s_allocator) : BuildWithBuilder(values, static () => new Int16Array.Builder(), static (builder, length) => builder.Reserve(length), static (builder, value) => builder.Append(value), static builder => builder.Build(s_allocator));
 
     private UInt16Array BuildUInt16(ushort[] values)
-        => options.UseLowLevelFixedWidth ? FixedWidthArrowArrayFactory.Build(values, Allocator) : BuildWithBuilder(values, static () => new UInt16Array.Builder(), static (builder, length) => builder.Reserve(length), static (builder, value) => builder.Append(value), static builder => builder.Build(Allocator));
+        => _options.UseLowLevelFixedWidth ? FixedWidthArrowArrayFactory.Build(values, s_allocator) : BuildWithBuilder(values, static () => new UInt16Array.Builder(), static (builder, length) => builder.Reserve(length), static (builder, value) => builder.Append(value), static builder => builder.Build(s_allocator));
 
     private Int32Array BuildInt32(int[] values)
-        => options.UseLowLevelFixedWidth ? FixedWidthArrowArrayFactory.Build(values, Allocator) : BuildWithBuilder(values, static () => new Int32Array.Builder(), static (builder, length) => builder.Reserve(length), static (builder, value) => builder.Append(value), static builder => builder.Build(Allocator));
+        => _options.UseLowLevelFixedWidth ? FixedWidthArrowArrayFactory.Build(values, s_allocator) : BuildWithBuilder(values, static () => new Int32Array.Builder(), static (builder, length) => builder.Reserve(length), static (builder, value) => builder.Append(value), static builder => builder.Build(s_allocator));
 
     private UInt32Array BuildUInt32(uint[] values)
-        => options.UseLowLevelFixedWidth ? FixedWidthArrowArrayFactory.Build(values, Allocator) : BuildWithBuilder(values, static () => new UInt32Array.Builder(), static (builder, length) => builder.Reserve(length), static (builder, value) => builder.Append(value), static builder => builder.Build(Allocator));
+        => _options.UseLowLevelFixedWidth ? FixedWidthArrowArrayFactory.Build(values, s_allocator) : BuildWithBuilder(values, static () => new UInt32Array.Builder(), static (builder, length) => builder.Reserve(length), static (builder, value) => builder.Append(value), static builder => builder.Build(s_allocator));
 
     private Int64Array BuildInt64(long[] values)
-        => options.UseLowLevelFixedWidth ? FixedWidthArrowArrayFactory.Build(values, Allocator) : BuildWithBuilder(values, static () => new Int64Array.Builder(), static (builder, length) => builder.Reserve(length), static (builder, value) => builder.Append(value), static builder => builder.Build(Allocator));
+        => _options.UseLowLevelFixedWidth ? FixedWidthArrowArrayFactory.Build(values, s_allocator) : BuildWithBuilder(values, static () => new Int64Array.Builder(), static (builder, length) => builder.Reserve(length), static (builder, value) => builder.Append(value), static builder => builder.Build(s_allocator));
 
     private UInt64Array BuildUInt64(ulong[] values)
-        => options.UseLowLevelFixedWidth ? FixedWidthArrowArrayFactory.Build(values, Allocator) : BuildWithBuilder(values, static () => new UInt64Array.Builder(), static (builder, length) => builder.Reserve(length), static (builder, value) => builder.Append(value), static builder => builder.Build(Allocator));
+        => _options.UseLowLevelFixedWidth ? FixedWidthArrowArrayFactory.Build(values, s_allocator) : BuildWithBuilder(values, static () => new UInt64Array.Builder(), static (builder, length) => builder.Reserve(length), static (builder, value) => builder.Append(value), static builder => builder.Build(s_allocator));
 
     private FloatArray BuildFloat(float[] values)
-        => options.UseLowLevelFixedWidth ? FixedWidthArrowArrayFactory.Build(values, Allocator) : BuildWithBuilder(values, static () => new FloatArray.Builder(), static (builder, length) => builder.Reserve(length), static (builder, value) => builder.Append(value), static builder => builder.Build(Allocator));
+        => _options.UseLowLevelFixedWidth ? FixedWidthArrowArrayFactory.Build(values, s_allocator) : BuildWithBuilder(values, static () => new FloatArray.Builder(), static (builder, length) => builder.Reserve(length), static (builder, value) => builder.Append(value), static builder => builder.Build(s_allocator));
 
     private DoubleArray BuildDouble(double[] values)
-        => options.UseLowLevelFixedWidth ? FixedWidthArrowArrayFactory.Build(values, Allocator) : BuildWithBuilder(values, static () => new DoubleArray.Builder(), static (builder, length) => builder.Reserve(length), static (builder, value) => builder.Append(value), static builder => builder.Build(Allocator));
+        => _options.UseLowLevelFixedWidth ? FixedWidthArrowArrayFactory.Build(values, s_allocator) : BuildWithBuilder(values, static () => new DoubleArray.Builder(), static (builder, length) => builder.Reserve(length), static (builder, value) => builder.Append(value), static builder => builder.Build(s_allocator));
 
     private Date32Array BuildDate32(DateOnly[] values)
-        => options.UseLowLevelFixedWidth ? FixedWidthArrowArrayFactory.Build(values, Allocator) : BuildWithBuilder(values, static () => new Date32Array.Builder(), static (builder, length) => builder.Reserve(length), static (builder, value) => builder.Append(value), static builder => builder.Build(Allocator));
+        => _options.UseLowLevelFixedWidth ? FixedWidthArrowArrayFactory.Build(values, s_allocator) : BuildWithBuilder(values, static () => new Date32Array.Builder(), static (builder, length) => builder.Reserve(length), static (builder, value) => builder.Append(value), static builder => builder.Build(s_allocator));
 
     private Date64Array BuildDate64(DateOnly[] values)
     {
-        if (options.UseLowLevelFixedWidth)
+        if (_options.UseLowLevelFixedWidth)
         {
-            return FixedWidthArrowArrayFactory.BuildDate64(values, Allocator);
+            return FixedWidthArrowArrayFactory.BuildDate64(values, s_allocator);
         }
 
         var builder = new Date64Array.Builder();
@@ -112,14 +112,14 @@ internal sealed class ClrArrayMaterializer
             builder.Append(value.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
         }
 
-        return builder.Build(Allocator);
+        return builder.Build(s_allocator);
     }
 
     private TimestampArray BuildTimestamp(DateTime[] values, TimestampType timestampType)
     {
-        if (options.UseLowLevelFixedWidth)
+        if (_options.UseLowLevelFixedWidth)
         {
-            return FixedWidthArrowArrayFactory.Build(values, timestampType, Allocator);
+            return FixedWidthArrowArrayFactory.Build(values, timestampType, s_allocator);
         }
 
         var builder = new TimestampArray.Builder(timestampType);
@@ -129,7 +129,7 @@ internal sealed class ClrArrayMaterializer
             builder.Append(new DateTimeOffset(value));
         }
 
-        return builder.Build(Allocator);
+        return builder.Build(s_allocator);
     }
 
     private static BinaryArray BuildGuid(Guid[] values)
@@ -141,7 +141,7 @@ internal sealed class ClrArrayMaterializer
             builder.Append(new ReadOnlySpan<byte>(value.ToByteArray()));
         }
 
-        return builder.Build(Allocator);
+        return builder.Build(s_allocator);
     }
 
     private static BinaryArray BuildBinary(byte[][] values)
@@ -153,7 +153,7 @@ internal sealed class ClrArrayMaterializer
             builder.Append(new ReadOnlySpan<byte>(value));
         }
 
-        return builder.Build(Allocator);
+        return builder.Build(s_allocator);
     }
 
     private static StringArray BuildString(string?[] values)
@@ -164,7 +164,7 @@ internal sealed class ClrArrayMaterializer
         if (System.Array.IndexOf(values, null) < 0)
         {
             builder.AppendRange(values!, Encoding.UTF8);
-            return builder.Build(Allocator);
+            return builder.Build(s_allocator);
         }
 
         foreach (var value in values)
@@ -179,7 +179,7 @@ internal sealed class ClrArrayMaterializer
             }
         }
 
-        return builder.Build(Allocator);
+        return builder.Build(s_allocator);
     }
 
     private static Decimal128Array BuildDecimal(decimal[] values, Decimal128Type type)
@@ -187,7 +187,7 @@ internal sealed class ClrArrayMaterializer
         var builder = new Decimal128Array.Builder(type);
         builder.Reserve(values.Length);
         builder.AppendRange(values);
-        return builder.Build(Allocator);
+        return builder.Build(s_allocator);
     }
 
     private static IArrowArray BuildNullable<T>(T?[] values, dynamic builder)
@@ -199,7 +199,7 @@ internal sealed class ClrArrayMaterializer
             builder.Append(value);
         }
 
-        return builder.Build(Allocator);
+        return builder.Build(s_allocator);
     }
 
     private static TimestampArray BuildNullableTimestamp(DateTime?[] values, TimestampType timestampType)
@@ -218,7 +218,7 @@ internal sealed class ClrArrayMaterializer
             }
         }
 
-        return builder.Build(Allocator);
+        return builder.Build(s_allocator);
     }
 
     private static Decimal128Array BuildNullableDecimal(decimal?[] values, Decimal128Type type)
@@ -237,7 +237,7 @@ internal sealed class ClrArrayMaterializer
             }
         }
 
-        return builder.Build(Allocator);
+        return builder.Build(s_allocator);
     }
 
     private static Date32Array BuildNullableDate32(DateOnly?[] values)
@@ -256,7 +256,7 @@ internal sealed class ClrArrayMaterializer
             }
         }
 
-        return builder.Build(Allocator);
+        return builder.Build(s_allocator);
     }
 
     private static Date64Array BuildNullableDate64(DateOnly?[] values)
@@ -275,7 +275,7 @@ internal sealed class ClrArrayMaterializer
             }
         }
 
-        return builder.Build(Allocator);
+        return builder.Build(s_allocator);
     }
 
     private static TArray BuildWithBuilder<T, TBuilder, TArray>(

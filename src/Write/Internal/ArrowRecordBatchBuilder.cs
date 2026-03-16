@@ -9,20 +9,20 @@ namespace ParquetRsForDotnet.Internal;
 /// </summary>
 internal sealed class ArrowRecordBatchBuilder
 {
-    private readonly ParquetSchema schema;
-    private readonly Schema arrowSchema;
-    private readonly ClrArrayMaterializer clrArrayMaterializer;
+    private readonly ParquetSchema _schema;
+    private readonly Schema _arrowSchema;
+    private readonly ClrArrayMaterializer _clrArrayMaterializer;
 
     public ArrowRecordBatchBuilder(ParquetSchema schema, ParquetWriteOptions options)
     {
-        this.schema = schema ?? throw new ArgumentNullException(nameof(schema));
+        _schema = schema ?? throw new ArgumentNullException(nameof(schema));
         ArgumentNullException.ThrowIfNull(options);
 
-        arrowSchema = PublicSchemaMapper.Map(schema);
-        clrArrayMaterializer = new ClrArrayMaterializer(CreateArrowMaterializationOptions(options));
+        _arrowSchema = PublicSchemaMapper.Map(schema);
+        _clrArrayMaterializer = new ClrArrayMaterializer(CreateArrowMaterializationOptions(options));
     }
 
-    public Schema ArrowSchema => arrowSchema;
+    public Schema ArrowSchema => _arrowSchema;
 
     public RecordBatch Build(IReadOnlyList<System.Array> columns)
     {
@@ -34,7 +34,7 @@ internal sealed class ArrowRecordBatchBuilder
 
         for (var i = 0; i < columns.Count; i++)
         {
-            var column = schema.Columns[i];
+            var column = _schema.Columns[i];
             var data = columns[i] ?? throw new ArgumentNullException(nameof(columns), $"Column '{column.Name}' is null.");
 
             ValidateManagedArrayShape(column, data, i, rowCount);
@@ -42,14 +42,14 @@ internal sealed class ArrowRecordBatchBuilder
             var context = new ColumnMaterializationContext(
                 column.Name,
                 ResolveManagedArrayElementType(data),
-                arrowSchema.GetFieldByIndex(i).DataType,
+                _arrowSchema.GetFieldByIndex(i).DataType,
                 rowCount,
                 column.IsNullable);
 
-            arrays[i] = clrArrayMaterializer.Materialize(data, context);
+            arrays[i] = _clrArrayMaterializer.Materialize(data, context);
         }
 
-        return new RecordBatch(arrowSchema, arrays, rowCount);
+        return new RecordBatch(_arrowSchema, arrays, rowCount);
     }
 
     public RecordBatch Build(IReadOnlyList<IArrowArray> columns)
@@ -62,9 +62,9 @@ internal sealed class ArrowRecordBatchBuilder
 
         for (var i = 0; i < columns.Count; i++)
         {
-            var column = schema.Columns[i];
+            var column = _schema.Columns[i];
             var data = columns[i] ?? throw new ArgumentNullException(nameof(columns), $"Column '{column.Name}' is null.");
-            var expectedType = arrowSchema.GetFieldByIndex(i).DataType;
+            var expectedType = _arrowSchema.GetFieldByIndex(i).DataType;
 
             if (!column.IsNullable && data.NullCount > 0)
             {
@@ -79,7 +79,7 @@ internal sealed class ArrowRecordBatchBuilder
             arrays[i] = data;
         }
 
-        return new RecordBatch(arrowSchema, arrays, rowCount);
+        return new RecordBatch(_arrowSchema, arrays, rowCount);
     }
 
     private static ArrowMaterializationOptions CreateArrowMaterializationOptions(ParquetWriteOptions options)
@@ -115,9 +115,9 @@ internal sealed class ArrowRecordBatchBuilder
 
     private void ValidateColumnCount(int columnCount)
     {
-        if (columnCount != schema.Columns.Count)
+        if (columnCount != _schema.Columns.Count)
         {
-            throw new NativeParquetException(NativeErrorCode.SchemaMismatch, $"Column count {columnCount} does not match schema column count {schema.Columns.Count}.");
+            throw new NativeParquetException(NativeErrorCode.SchemaMismatch, $"Column count {columnCount} does not match schema column count {_schema.Columns.Count}.");
         }
     }
 
@@ -146,7 +146,5 @@ internal sealed class ArrowRecordBatchBuilder
         {
             throw new NativeParquetException(NativeErrorCode.SchemaMismatch, $"Column '{column.Name}' CLR element type '{actualElementType}' does not match schema type '{expectedElementType}'.");
         }
-
     }
-
 }
