@@ -1,8 +1,9 @@
+using System.Data.SqlTypes;
 using Apache.Arrow;
 using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Configs;
+using BenchmarkDotNet.Diagnostics.Windows.Configs;
 using BenchmarkDotNet.Jobs;
-using BenchmarkDotNet.Toolchains.InProcess.Emit;
 using ParquetSharp;
 using ParquetSharp.IO;
 using ManagedParquetFileReader = ParquetRsForDotnet.ParquetFileReader;
@@ -14,7 +15,8 @@ namespace ParquetRsForDotnet.Benchmarks;
 /// Compares Arrow-native row-group column reads against ParquetSharp using the same externally produced parquet bytes.
 /// </summary>
 [MemoryDiagnoser]
-[Config(typeof(BenchmarkConfig))]
+[NativeMemoryProfiler]
+[Config(typeof(ProductionReadBenchmarkConfig))]
 public class ParquetReaderBenchmarks
 {
     private const int MultiBatchCount = 10;
@@ -63,7 +65,7 @@ public class ParquetReaderBenchmarks
             using var rowGroup = reader.OpenRowGroupReader(rowGroupIndex);
             score += rowGroup.ReadColumn<int?>(0).Length;
             score += rowGroup.ReadColumn<string>(1).Length;
-            score += rowGroup.ReadColumn<decimal?>(2).Length;
+            score += rowGroup.ReadColumn<SqlDecimal?>(2).Length;
             score += rowGroup.ReadColumn<DateTime?>(3).Length;
         }
 
@@ -318,14 +320,13 @@ public class ParquetReaderBenchmarks
         return start..end;
     }
 
-    private sealed class BenchmarkConfig : ManualConfig
+    private sealed class ProductionReadBenchmarkConfig : ManualConfig
     {
-        public BenchmarkConfig()
+        public ProductionReadBenchmarkConfig()
         {
             AddJob(Job.MediumRun
                 .WithRuntime(BenchmarkDotNet.Environments.CoreRuntime.Core80)
-                .WithToolchain(InProcessEmitToolchain.Instance)
-                .WithId("InProcessNet80_Read"));
+                .WithId("Net80OutOfProcess_Read"));
         }
     }
 

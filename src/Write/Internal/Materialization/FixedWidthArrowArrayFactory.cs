@@ -7,6 +7,8 @@ namespace ParquetRsForDotnet.Internal.Materialization;
 
 internal static class FixedWidthArrowArrayFactory
 {
+    private static readonly int s_unixEpochDayNumber = DateOnly.FromDateTime(DateTime.UnixEpoch).DayNumber;
+
     public static Int8Array Build(sbyte[] values, MemoryAllocator allocator)
         => Build(values, Int8Type.Default, allocator, static data => new Int8Array(data));
 
@@ -42,21 +44,10 @@ internal static class FixedWidthArrowArrayFactory
         var normalized = new int[values.Length];
         for (var i = 0; i < values.Length; i++)
         {
-            normalized[i] = values[i].DayNumber - DateOnly.MinValue.DayNumber;
+            normalized[i] = values[i].DayNumber - s_unixEpochDayNumber;
         }
 
         return Build(normalized, Date32Type.Default, allocator, static data => new Date32Array(data));
-    }
-
-    public static Date64Array BuildDate64(DateOnly[] values, MemoryAllocator allocator)
-    {
-        var normalized = new long[values.Length];
-        for (var i = 0; i < values.Length; i++)
-        {
-            normalized[i] = values[i].ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc).Ticks / TimeSpan.TicksPerMillisecond;
-        }
-
-        return Build(normalized, Date64Type.Default, allocator, static data => new Date64Array(data));
     }
 
     public static TimestampArray Build(DateTime[] values, TimestampType timestampType, MemoryAllocator allocator)

@@ -1,4 +1,5 @@
 using Apache.Arrow;
+using Apache.Arrow.Types;
 using ParquetRsForDotnet.Internal.Materialization;
 using ParquetRsForDotnet.Internal.SchemaMapping;
 
@@ -11,6 +12,7 @@ internal sealed class ArrowRecordBatchBuilder
 {
     private readonly ParquetSchema _schema;
     private readonly Schema _arrowSchema;
+    private readonly IArrowType[] _arrowTypes;
     private readonly ClrArrayMaterializer _clrArrayMaterializer;
 
     public ArrowRecordBatchBuilder(ParquetSchema schema, ParquetWriteOptions options)
@@ -19,6 +21,12 @@ internal sealed class ArrowRecordBatchBuilder
         ArgumentNullException.ThrowIfNull(options);
 
         _arrowSchema = PublicSchemaMapper.Map(schema);
+        _arrowTypes = new IArrowType[schema.Columns.Count];
+        for (var i = 0; i < _arrowTypes.Length; i++)
+        {
+            _arrowTypes[i] = _arrowSchema.GetFieldByIndex(i).DataType;
+        }
+
         _clrArrayMaterializer = new ClrArrayMaterializer(CreateArrowMaterializationOptions(options));
     }
 
@@ -29,7 +37,7 @@ internal sealed class ArrowRecordBatchBuilder
         ArgumentNullException.ThrowIfNull(columns);
         ValidateColumnCount(columns.Count);
 
-        var rowCount = ResolveRowCount(columns.Select(static column => column?.Length ?? -1).ToArray());
+        var rowCount = ResolveRowCount(columns);
         var arrays = new IArrowArray[columns.Count];
 
         for (var i = 0; i < columns.Count; i++)
@@ -42,7 +50,7 @@ internal sealed class ArrowRecordBatchBuilder
             var context = new ColumnMaterializationContext(
                 column.Name,
                 ResolveManagedArrayElementType(data),
-                _arrowSchema.GetFieldByIndex(i).DataType,
+                _arrowTypes[i],
                 rowCount,
                 column.IsNullable);
 
@@ -57,14 +65,14 @@ internal sealed class ArrowRecordBatchBuilder
         ArgumentNullException.ThrowIfNull(columns);
         ValidateColumnCount(columns.Count);
 
-        var rowCount = ResolveRowCount(columns.Select(static column => column?.Length ?? -1).ToArray());
+        var rowCount = ResolveRowCount(columns);
         var arrays = new IArrowArray[columns.Count];
 
         for (var i = 0; i < columns.Count; i++)
         {
             var column = _schema.Columns[i];
             var data = columns[i] ?? throw new ArgumentNullException(nameof(columns), $"Column '{column.Name}' is null.");
-            var expectedType = _arrowSchema.GetFieldByIndex(i).DataType;
+            var expectedType = _arrowTypes[i];
 
             if (!column.IsNullable && data.NullCount > 0)
             {
@@ -94,19 +102,36 @@ internal sealed class ArrowRecordBatchBuilder
         };
     }
 
-    private static int ResolveRowCount(IReadOnlyList<int> lengths)
+    private static int ResolveRowCount<TColumn>(IReadOnlyList<TColumn> columns)
+        where TColumn : class
     {
-        if (lengths.Count == 0)
+        if (columns.Count == 0)
         {
             throw new NativeParquetException(NativeErrorCode.InvalidArgument, "At least one column is required to build a record batch.");
         }
 
-        var rowCount = lengths[0];
-        for (var i = 1; i < lengths.Count; i++)
+        var first = columns[0] switch
         {
-            if (lengths[i] != rowCount)
+            System.Array array => array.Length,
+            IArrowArray arrowArray => arrowArray.Length,
+            null => -1,
+            _ => throw new NativeParquetException(NativeErrorCode.InvalidArgument, "Unsupported column container type.")
+        };
+
+        var rowCount = first;
+        for (var i = 1; i < columns.Count; i++)
+        {
+            var length = columns[i] switch
             {
-                throw new NativeParquetException(NativeErrorCode.SchemaMismatch, $"Column length {lengths[i]} does not match expected batch length {rowCount}.");
+                System.Array array => array.Length,
+                IArrowArray arrowArray => arrowArray.Length,
+                null => -1,
+                _ => throw new NativeParquetException(NativeErrorCode.InvalidArgument, "Unsupported column container type.")
+            };
+
+            if (length != rowCount)
+            {
+                throw new NativeParquetException(NativeErrorCode.SchemaMismatch, $"Column length {length} does not match expected batch length {rowCount}.");
             }
         }
 

@@ -86,6 +86,9 @@ public sealed class ParquetRowGroupReader : IDisposable
 
     public IArrowArray ReadColumn(int columnIndex);
     public IArrowArray ReadColumn(string columnName);
+
+    public T[] ReadColumn<T>(int columnIndex);
+    public T[] ReadColumn<T>(string columnName);
 }
 ```
 
@@ -230,7 +233,8 @@ var eventTimeColumn = (TimestampArray)rowGroup.ReadColumn("eventTime");
 
 Notes:
 
-- v1 read APIs are Arrow-native only
+- CLR read materialization is also available through `ReadColumn<T>(...)`
+- decimal CLR reads materialize as `SqlDecimal` / `SqlDecimal?`
 - input streams must be seekable
 - reads are explicit by row group, then by column
 

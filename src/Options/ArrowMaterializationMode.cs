@@ -17,7 +17,8 @@ public enum ArrowMaterializationMode
     BuilderOnly = 1,
 
     /// <summary>
-    /// Enables low-level fixed-width array materialization for supported non-null CLR arrays.
+    /// Enables low-level fixed-width array materialization for supported non-nullable numeric CLR arrays.
+    /// Temporal and nullable CLR arrays continue to use Apache.Arrow builder-based materialization.
     /// </summary>
     LowLevelFixedWidth = 2,
 }

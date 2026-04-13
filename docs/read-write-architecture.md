@@ -249,7 +249,7 @@ The most likely future extension points are:
 - richer native writer options
 - `ReadColumn(string name)` convenience and additional read ergonomics
 - Arrow-native full row-group `RecordBatch` reads
-- optional Arrow-to-CLR materialization for reads
+- optional Arrow-to-CLR materialization for reads, with decimal columns exposed as `SqlDecimal`
 - async sink/source support
 
 ## Contributor Notes

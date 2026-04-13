@@ -219,6 +219,151 @@ public sealed class ParquetWriterTests
     }
 
     [Fact]
+    public async Task FileWriter_WritesNullableFixedWidthManagedBatches_WhenLowLevelFixedWidthIsRequested()
+    {
+        var schema = new ParquetSchema(
+        [
+            new ParquetColumn("i32", ParquetColumnType.Int32, isNullable: true),
+            new ParquetColumn("f64", ParquetColumnType.Float64, isNullable: true),
+            new ParquetColumn("eventDate", ParquetColumnType.Date32, isNullable: true),
+            new ParquetColumn("eventTime", new ParquetTimestampSettings(ParquetTimestampUnit.Millisecond, "UTC"), isNullable: true),
+        ]);
+
+        using var destination = new MemoryStream();
+        using (var writer = new ParquetFileWriter(destination, schema, new ParquetWriteOptions
+        {
+            ArrowMaterializationMode = ArrowMaterializationMode.LowLevelFixedWidth
+        }))
+        {
+            writer.WriteBatch(
+                new int?[] { 10, null, 30, null },
+                new double?[] { 1.25d, null, 3.5d, 4.75d },
+                new DateOnly?[] { new(2024, 5, 1), null, new(2024, 5, 3), new(2024, 5, 4) },
+                new DateTime?[]
+                {
+                    new(2024, 6, 1, 1, 2, 3, DateTimeKind.Utc),
+                    null,
+                    new(2024, 6, 1, 4, 5, 6, DateTimeKind.Utc),
+                    new(2024, 6, 1, 7, 8, 9, DateTimeKind.Utc),
+                });
+
+            writer.Finish();
+        }
+
+        destination.Position = 0;
+        using var parquetReader = await ParquetReader.CreateAsync(destination, leaveStreamOpen: true);
+        using var rowGroup = parquetReader.OpenRowGroupReader(0);
+        var intColumn = await rowGroup.ReadColumnAsync((Parquet.Schema.DataField)parquetReader.Schema[0]);
+        var doubleColumn = await rowGroup.ReadColumnAsync((Parquet.Schema.DataField)parquetReader.Schema[1]);
+        var dateColumn = await rowGroup.ReadColumnAsync((Parquet.Schema.DataField)parquetReader.Schema[2]);
+        var timestampColumn = await rowGroup.ReadColumnAsync((Parquet.Schema.DataField)parquetReader.Schema[3]);
+
+        Assert.Equal(new int?[] { 10, null, 30, null }, (int?[])intColumn.Data);
+        Assert.Equal(new double?[] { 1.25d, null, 3.5d, 4.75d }, (double?[])doubleColumn.Data);
+        Assert.Equal(
+            new DateTime?[] { new(2024, 5, 1), null, new(2024, 5, 3), new(2024, 5, 4) },
+            ((DateTime?[])dateColumn.Data).Select(static value => value?.Date).ToArray());
+        Assert.Equal(
+            new DateTime?[]
+            {
+                new(2024, 6, 1, 1, 2, 3),
+                null,
+                new(2024, 6, 1, 4, 5, 6),
+                new(2024, 6, 1, 7, 8, 9),
+            },
+            ((DateTime?[])timestampColumn.Data).Select(static value => value?.ToUniversalTime()).ToArray());
+    }
+
+    [Fact]
+    public async Task FileWriter_WritesNonNullableTemporalManagedBatches_WithLowLevelMaterialization()
+    {
+        var schema = new ParquetSchema(
+        [
+            new ParquetColumn("eventDate32", ParquetColumnType.Date32),
+            new ParquetColumn("eventDate64", ParquetColumnType.Date64),
+            new ParquetColumn("eventTime", new ParquetTimestampSettings(ParquetTimestampUnit.Millisecond, "UTC")),
+        ]);
+
+        using var destination = new MemoryStream();
+        using (var writer = new ParquetFileWriter(destination, schema, new ParquetWriteOptions
+        {
+            ArrowMaterializationMode = ArrowMaterializationMode.LowLevelFixedWidth
+        }))
+        {
+            writer.WriteBatch(
+                new DateOnly[] { new(2024, 5, 1), new(2024, 5, 2), new(2024, 5, 3) },
+                new DateOnly[] { new(2024, 6, 1), new(2024, 6, 2), new(2024, 6, 3) },
+                new DateTime[]
+                {
+                    new(2024, 7, 1, 1, 2, 3, DateTimeKind.Utc),
+                    new(2024, 7, 1, 4, 5, 6, DateTimeKind.Utc),
+                    new(2024, 7, 1, 7, 8, 9, DateTimeKind.Utc),
+                });
+
+            writer.Finish();
+        }
+
+        destination.Position = 0;
+        using var parquetReader = await ParquetReader.CreateAsync(destination, leaveStreamOpen: true);
+        using var rowGroup = parquetReader.OpenRowGroupReader(0);
+        var date32Column = await rowGroup.ReadColumnAsync((Parquet.Schema.DataField)parquetReader.Schema[0]);
+        var date64Column = await rowGroup.ReadColumnAsync((Parquet.Schema.DataField)parquetReader.Schema[1]);
+        var timestampColumn = await rowGroup.ReadColumnAsync((Parquet.Schema.DataField)parquetReader.Schema[2]);
+
+        Assert.Equal(
+            new DateTime[] { new(2024, 5, 1), new(2024, 5, 2), new(2024, 5, 3) },
+            ((DateTime[])date32Column.Data).Select(static value => value.Date).ToArray());
+        Assert.Equal(
+            new[]
+            {
+                new DateTimeOffset(new DateOnly(2024, 6, 1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)).ToUnixTimeMilliseconds(),
+                new DateTimeOffset(new DateOnly(2024, 6, 2).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)).ToUnixTimeMilliseconds(),
+                new DateTimeOffset(new DateOnly(2024, 6, 3).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)).ToUnixTimeMilliseconds(),
+            },
+            (long[])date64Column.Data);
+        Assert.Equal(
+            new DateTime[]
+            {
+                new(2024, 7, 1, 1, 2, 3),
+                new(2024, 7, 1, 4, 5, 6),
+                new(2024, 7, 1, 7, 8, 9),
+            },
+            ((DateTime[])timestampColumn.Data).Select(static value => value.ToUniversalTime()).ToArray());
+    }
+
+    [Fact]
+    public async Task FileWriter_WritesNonNullableStringManagedBatches_WithLowLevelMaterialization()
+    {
+        var schema = new ParquetSchema(
+        [
+            new ParquetColumn("id", ParquetColumnType.Int32),
+            new ParquetColumn("name", ParquetColumnType.String),
+        ]);
+
+        using var destination = new MemoryStream();
+        using (var writer = new ParquetFileWriter(destination, schema, new ParquetWriteOptions
+        {
+            ArrowMaterializationMode = ArrowMaterializationMode.LowLevelFixedWidth
+        }))
+        {
+            writer.WriteBatch(
+                new[] { 1, 2, 3 },
+                new[] { "alpha", "beta", "gamma" });
+
+            writer.Finish();
+        }
+
+        destination.Position = 0;
+        using var parquetReader = await ParquetReader.CreateAsync(destination, leaveStreamOpen: true);
+        using var rowGroup = parquetReader.OpenRowGroupReader(0);
+        var idColumn = await rowGroup.ReadColumnAsync((Parquet.Schema.DataField)parquetReader.Schema[0]);
+        var nameColumn = await rowGroup.ReadColumnAsync((Parquet.Schema.DataField)parquetReader.Schema[1]);
+
+        Assert.Equal(new[] { 1, 2, 3 }, (int[])idColumn.Data);
+        Assert.Equal(new[] { "alpha", "beta", "gamma" }, (string[])nameColumn.Data);
+    }
+
+    [Fact]
     public async Task FileWriter_WritesTemporalArrowBatches()
     {
         var allocator = MemoryAllocator.Default.Value;

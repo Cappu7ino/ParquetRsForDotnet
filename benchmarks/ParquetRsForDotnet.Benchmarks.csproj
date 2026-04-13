@@ -19,14 +19,12 @@
 
   <ItemGroup>
     <PackageReference Include="BenchmarkDotNet" Version="0.14.0" />
+    <PackageReference Include="BenchmarkDotNet.Diagnostics.Windows" Version="0.14.0" />
     <PackageReference Include="ParquetSharp" Version="12.0.1" />
   </ItemGroup>
 
-  <Target Name="CopyNativeParquetLibraryToBenchmarkOutput" AfterTargets="Build"
-          Condition="Exists('$(NativeDllSource)')">
-    <Copy SourceFiles="$(NativeDllSource)"
-          DestinationFiles="$(OutDir)parquet_rs_for_dotnet.dll"
-          SkipUnchangedFiles="true" />
+  <Target Name="CopyNativeParquetLibraryToBenchmarkOutput" AfterTargets="Build" Condition="Exists('$(NativeDllSource)')">
+    <Copy SourceFiles="$(NativeDllSource)" DestinationFiles="$(OutDir)parquet_rs_for_dotnet.dll" SkipUnchangedFiles="true" />
   </Target>
 
 </Project>

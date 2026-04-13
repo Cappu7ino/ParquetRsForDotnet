@@ -1,3 +1,4 @@
+using System.Data.SqlTypes;
 using Apache.Arrow;
 using Apache.Arrow.Types;
 using ParquetSharp;
@@ -113,16 +114,16 @@ public sealed class ParquetReaderTests
     }
 
     [Fact]
-    public void RowGroupReader_ReadsClrDecimalAndTimestampColumns()
+    public void RowGroupReader_ReadsClrSqlDecimalAndTimestampColumns()
     {
         using var source = CreateTwoRowGroupMixedFile();
         using var reader = new ParquetFileReader(source);
         using var rowGroup = reader.OpenRowGroupReader(0);
 
-        var amounts = rowGroup.ReadColumn<decimal?>(2);
+        var amounts = rowGroup.ReadColumn<SqlDecimal?>(2);
         var created = rowGroup.ReadColumn<DateTime?>("created");
 
-        Assert.Equal(new decimal?[] { 10.5m, null, 30.25m }, amounts);
+        Assert.Equal(new SqlDecimal?[] { new(10.5m), null, new(30.25m) }, amounts);
         Assert.Equal(new DateTime(2024, 6, 1, 1, 2, 3, DateTimeKind.Utc), created[0]);
         Assert.Null(created[1]);
         Assert.Equal(new DateTime(2024, 6, 1, 4, 5, 6, DateTimeKind.Utc), created[2]);
@@ -182,7 +183,7 @@ public sealed class ParquetReaderTests
 
         var ids = rowGroup.ReadColumn<int?>(0);
         var names = rowGroup.ReadColumn<string>(1);
-        var amounts = rowGroup.ReadColumn<decimal?>(2);
+        var amounts = rowGroup.ReadColumn<SqlDecimal?>(2);
         var created = rowGroup.ReadColumn<DateTime?>(3);
 
         Assert.Equal(rowCount, ids.Length);
@@ -191,7 +192,7 @@ public sealed class ParquetReaderTests
         Assert.Equal(rowCount, created.Length);
         Assert.Equal(1, ids[1]);
         Assert.Equal("row-1", names[1]);
-        Assert.Equal(1.25m, amounts[1]);
+        Assert.Equal(new SqlDecimal(1.25m), amounts[1]);
         Assert.Equal(new DateTime(2024, 1, 1, 0, 1, 0, DateTimeKind.Utc), created[1]);
     }
 
@@ -221,12 +222,12 @@ public sealed class ParquetReaderTests
         using var reader = new ParquetFileReader(source);
         using var rowGroup = reader.OpenRowGroupReader(0);
 
-        var amounts = rowGroup.ReadColumn<decimal?>(2);
+        var amounts = rowGroup.ReadColumn<SqlDecimal?>(2);
         var created = rowGroup.ReadColumn<DateTime?>(3);
 
         Assert.Equal(rowCount, amounts.Length);
         Assert.Equal(rowCount, created.Length);
-        Assert.Equal(1.25m, amounts[1]);
+        Assert.Equal(new SqlDecimal(1.25m), amounts[1]);
         Assert.Null(amounts[0]);
         Assert.Equal(new DateTime(2024, 1, 1, 0, 1, 0, DateTimeKind.Utc), created[1]);
         Assert.Null(created[0]);

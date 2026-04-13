@@ -161,6 +161,7 @@ dotnet build benchmarks/ParquetRsForDotnet.Benchmarks.csproj
   - Arrow-native operation
   - parquet encode/decode only
   - managed allocation only or native memory too
+- for decimal CLR reads, expect `SqlDecimal` rather than `decimal`
 
 ## Good first files to inspect
 

@@ -1,3 +1,4 @@
+using System.Data.SqlTypes;
 using System.Text;
 using Apache.Arrow;
 using Apache.Arrow.Arrays;
@@ -57,7 +58,7 @@ internal sealed class ArrowArrayClrMaterializer
             DoubleType => typeof(double),
             StringType => typeof(string),
             BinaryType => typeof(byte[]),
-            Decimal128Type => typeof(decimal),
+            Decimal128Type => typeof(SqlDecimal),
             FixedSizeBinaryType fixedSizeBinaryType => fixedSizeBinaryType.ByteWidth == 16 ? typeof(Guid) : typeof(byte[]),
             Date32Type or Date64Type => typeof(DateOnly),
             TimestampType => typeof(DateTime),
@@ -400,12 +401,12 @@ internal sealed class ArrowArrayClrMaterializer
     {
         if (!isNullable)
         {
-            var values = new decimal[array.Length];
+            var values = new SqlDecimal[array.Length];
             if (array.NullCount == 0)
             {
                 for (var i = 0; i < values.Length; i++)
                 {
-                    values[i] = array.GetValue(i) ?? throw CreateUnexpectedNullException(i);
+                    values[i] = new SqlDecimal(array.GetValue(i) ?? throw CreateUnexpectedNullException(i));
                 }
 
                 return values;
@@ -413,18 +414,18 @@ internal sealed class ArrowArrayClrMaterializer
 
             for (var i = 0; i < values.Length; i++)
             {
-                values[i] = array.GetValue(i) ?? throw CreateUnexpectedNullException(i);
+                values[i] = new SqlDecimal(array.GetValue(i) ?? throw CreateUnexpectedNullException(i));
             }
 
             return values;
         }
 
-        var nullableValues = new decimal?[array.Length];
+        var nullableValues = new SqlDecimal?[array.Length];
         if (array.NullCount == 0)
         {
             for (var i = 0; i < nullableValues.Length; i++)
             {
-                nullableValues[i] = array.GetValue(i) ?? throw CreateUnexpectedNullException(i);
+                nullableValues[i] = new SqlDecimal(array.GetValue(i) ?? throw CreateUnexpectedNullException(i));
             }
 
             return nullableValues;
@@ -432,7 +433,8 @@ internal sealed class ArrowArrayClrMaterializer
 
         for (var i = 0; i < nullableValues.Length; i++)
         {
-            nullableValues[i] = array.GetValue(i);
+            var value = array.GetValue(i);
+            nullableValues[i] = value.HasValue ? new SqlDecimal(value.Value) : null;
         }
 
         return nullableValues;
