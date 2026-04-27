@@ -256,6 +256,38 @@ cd native
 cargo test
 ```
 
+## NuGet Packaging
+
+The project produces a strong-name signed NuGet package with Source Link support and bundled native libraries.
+
+### Windows-only pack
+
+Build and pack with the Windows native library only:
+
+```powershell
+dotnet pack src/ParquetRsForDotnet.csproj -c Release
+```
+
+This produces `ParquetRsForDotnet.0.1.0.nupkg` and `ParquetRsForDotnet.0.1.0.snupkg` under `src/bin/Release/`.
+
+### Cross-build for Linux (opt-in)
+
+To include the Linux native library in the package, install the cross-compilation toolchain once:
+
+```powershell
+winget install zig.zig
+cargo install cargo-zigbuild
+rustup target add x86_64-unknown-linux-gnu
+```
+
+Then pack with both RIDs:
+
+```powershell
+dotnet pack src/ParquetRsForDotnet.csproj -c Release -p:CrossBuildLinux=true
+```
+
+The resulting `.nupkg` will contain native libraries under `runtimes/win-x64/native/` and `runtimes/linux-x64/native/`.
+
 ## Benchmarks
 
 The repository includes a BenchmarkDotNet project under `benchmarks/` focused on true-parity multi-batch writer comparisons against ParquetSharp.

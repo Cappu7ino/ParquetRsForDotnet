@@ -8,6 +8,8 @@
 
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <SignAssembly>true</SignAssembly>
+    <AssemblyOriginatorKeyFile>..\ParquetRsForDotnet.snk</AssemblyOriginatorKeyFile>
   </PropertyGroup>
 
   <ItemGroup>

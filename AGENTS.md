@@ -86,6 +86,10 @@ dotnet build benchmarks/ParquetRsForDotnet.Benchmarks.csproj
 
 Run `cargo test` from `native/`.
 
+```powershell
+dotnet pack src/ParquetRsForDotnet.csproj -c Release -p:CrossBuildLinux=true
+```
+
 ## Read-path testing guidance
 
 - Prefer `ParquetSharp` to generate external parquet source files for reader tests
@@ -112,6 +116,7 @@ Run `cargo test` from `native/`.
 - `docs/read-write-architecture.md`
 - `src/Interop/NativeParquetBridge.cs`
 - `native/src/lib.rs`
+- `ParquetRsForDotnet.snk`
 
 ## When in doubt
 

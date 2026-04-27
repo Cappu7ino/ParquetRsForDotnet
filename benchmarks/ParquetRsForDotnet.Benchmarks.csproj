@@ -7,6 +7,8 @@
     <Nullable>enable</Nullable>
     <RootNamespace>ParquetRsForDotnet.Benchmarks</RootNamespace>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <SignAssembly>true</SignAssembly>
+    <AssemblyOriginatorKeyFile>..\ParquetRsForDotnet.snk</AssemblyOriginatorKeyFile>
   </PropertyGroup>
 
   <PropertyGroup>

@@ -7,6 +7,33 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
+  <!-- Strong-name signing -->
+  <PropertyGroup>
+    <SignAssembly>true</SignAssembly>
+    <AssemblyOriginatorKeyFile>..\ParquetRsForDotnet.snk</AssemblyOriginatorKeyFile>
+  </PropertyGroup>
+
+  <!-- NuGet package metadata -->
+  <PropertyGroup>
+    <PackageId>ParquetRsForDotnet</PackageId>
+    <Version>0.1.0</Version>
+    <Authors>Azure Data Movement</Authors>
+    <Description>Arrow-native Parquet reader and writer for .NET, powered by the Rust parquet crate via Arrow C Data interop.</Description>
+    <PackageTags>parquet;arrow;rust;native;interop</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <!-- Source Link and deterministic builds -->
+  <PropertyGroup>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+
+  <!-- Native Rust build configuration -->
   <PropertyGroup>
     <NativeProjectDir>..\native</NativeProjectDir>
     <NativeTargetDir>$(MSBuildThisFileDirectory)bin\$(Configuration)\$(TargetFramework)\native</NativeTargetDir>
@@ -15,6 +42,8 @@
     <NativeCargoArgs Condition="'$(Configuration)' == 'Release'">build --release</NativeCargoArgs>
     <NativeCargoArgs Condition="'$(NativeCargoArgs)' == ''">build</NativeCargoArgs>
     <NativeLibraryPath>$(NativeProjectDir)\target\$(NativeConfiguration)\parquet_rs_for_dotnet.dll</NativeLibraryPath>
+    <NativeLibraryPathLinux>$(NativeProjectDir)\target\$(NativeConfiguration)\libparquet_rs_for_dotnet.so</NativeLibraryPathLinux>
+    <NativeLibraryPathLinuxCross>$(NativeProjectDir)\target\x86_64-unknown-linux-gnu\$(NativeConfiguration)\libparquet_rs_for_dotnet.so</NativeLibraryPathLinuxCross>
   </PropertyGroup>
 
   <ItemGroup>
@@ -23,12 +52,41 @@
 
   <ItemGroup>
     <PackageReference Include="Apache.Arrow" Version="22.1.0" />
+    <PackageReference Include="Microsoft.SourceLink.AzureRepos.Git" Version="8.0.0" PrivateAssets="All" />
+  </ItemGroup>
+
+  <!-- Pack README into the NuGet package root -->
+  <ItemGroup>
+    <None Include="..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+  <!-- Pack native libraries into runtimes/<rid>/native/ for NuGet consumers -->
+  <ItemGroup>
+    <None Include="$(NativeProjectDir)\target\$(NativeConfiguration)\parquet_rs_for_dotnet.dll"
+          Condition="Exists('$(NativeProjectDir)\target\$(NativeConfiguration)\parquet_rs_for_dotnet.dll')"
+          Pack="true"
+          PackagePath="runtimes\win-x64\native" />
   </ItemGroup>
 
   <Target Name="BuildNativeParquetLibrary" BeforeTargets="Build">
     <Exec Command="&quot;$(UserProfile)\.cargo\bin\cargo.exe&quot; $(NativeCargoArgs)"
           WorkingDirectory="$(NativeProjectDir)"
           Condition="Exists('$(UserProfile)\.cargo\bin\cargo.exe')" />
+  </Target>
+
+  <Target Name="CrossBuildNativeParquetLibraryLinux" BeforeTargets="Build"
+          Condition="'$(CrossBuildLinux)' == 'true' And Exists('$(UserProfile)\.cargo\bin\cargo-zigbuild.exe')">
+    <Exec Command="&quot;$(UserProfile)\.cargo\bin\cargo-zigbuild.exe&quot; $(NativeCargoArgs) --target x86_64-unknown-linux-gnu"
+          WorkingDirectory="$(NativeProjectDir)" />
+  </Target>
+
+  <Target Name="IncludeLinuxNativeLibrary" BeforeTargets="_GetPackageFiles"
+          Condition="Exists('$(NativeLibraryPathLinuxCross)')">
+    <ItemGroup>
+      <None Include="$(NativeLibraryPathLinuxCross)"
+            Pack="true"
+            PackagePath="runtimes\linux-x64\native" />
+    </ItemGroup>
   </Target>
 
   <Target Name="CopyNativeParquetLibrary" AfterTargets="Build"
