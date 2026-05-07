@@ -67,6 +67,7 @@ When editing existing files, preserve local style only if it clearly predates th
 - Avoid whole-file buffering on the read path
 - Prefer projection/pushdown rather than over-reading parquet data
 - Keep benchmarks apples-to-apples when comparing with ParquetSharp
+- Keep `net8.0` and `netstandard2.0` builds compiling when changing public or interop code
 
 ## Validation commands
 
@@ -74,6 +75,12 @@ Use these as the default validation set after code changes:
 
 ```powershell
 dotnet test tests/ParquetRsForDotnet.Tests.csproj --no-restore
+```
+
+The test project targets both `net8.0` and `net472`; the `net472` target exercises the `netstandard2.0` library asset from a .NET Framework consumer.
+
+```powershell
+dotnet test tests/ParquetRsForDotnet.Tests.csproj -f net472 --no-restore
 ```
 
 ```powershell

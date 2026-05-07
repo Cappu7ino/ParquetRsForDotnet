@@ -16,7 +16,7 @@ public sealed class ParquetFileReader : IDisposable
 
     public ParquetFileReader(Stream input)
     {
-        ArgumentNullException.ThrowIfNull(input);
+        TargetFrameworkCompat.ThrowIfNull(input);
 
         _source = new ManagedParquetSource(input);
         _nativeReader = NativeParquetBridge.OpenFileReader(_source);
@@ -31,7 +31,7 @@ public sealed class ParquetFileReader : IDisposable
 
     public ParquetRowGroupReader OpenRowGroupReader(int rowGroupIndex)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        TargetFrameworkCompat.ThrowIfDisposed(_disposed, this);
 
         if ((uint)rowGroupIndex >= (uint)RowGroupCount)
         {
@@ -55,7 +55,7 @@ public sealed class ParquetFileReader : IDisposable
 
     internal int GetColumnIndex(string columnName)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(columnName);
+        TargetFrameworkCompat.ThrowIfNullOrWhiteSpace(columnName);
 
         for (var i = 0; i < Schema.Columns.Count; i++)
         {

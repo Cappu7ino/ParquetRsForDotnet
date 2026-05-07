@@ -16,14 +16,18 @@ internal static unsafe class NativeParquetBridge
 
     static NativeParquetBridge()
     {
+#if NET8_0_OR_GREATER
         NativeLibrary.SetDllImportResolver(typeof(NativeParquetBridge).Assembly, ResolveNativeLibrary);
+#else
+        PreloadNativeLibrary(typeof(NativeParquetBridge).Assembly);
+#endif
     }
 
     internal static IntPtr CreateFileWriter(Apache.Arrow.Schema schema, ManagedParquetSink sink, ParquetWriteOptions options)
     {
-        ArgumentNullException.ThrowIfNull(schema);
-        ArgumentNullException.ThrowIfNull(sink);
-        ArgumentNullException.ThrowIfNull(options);
+        TargetFrameworkCompat.ThrowIfNull(schema);
+        TargetFrameworkCompat.ThrowIfNull(sink);
+        TargetFrameworkCompat.ThrowIfNull(options);
 
         using var exporter = new ArrowSchemaExporter(schema);
         using var nativeOptions = NativeOptionScope.Create(options);
@@ -50,7 +54,7 @@ internal static unsafe class NativeParquetBridge
 
     internal static void WriteBatch(IntPtr writer, RecordBatch batch)
     {
-        ArgumentNullException.ThrowIfNull(batch);
+        TargetFrameworkCompat.ThrowIfNull(batch);
 
         NativeError error = default;
         var nativeBatch = CArrowArray.Create();
@@ -112,7 +116,7 @@ internal static unsafe class NativeParquetBridge
 
     internal static IntPtr OpenFileReader(ManagedParquetSource source)
     {
-        ArgumentNullException.ThrowIfNull(source);
+        TargetFrameworkCompat.ThrowIfNull(source);
 
         NativeError error = default;
         var nativeSource = source.NativeSource;
@@ -224,20 +228,28 @@ internal static unsafe class NativeParquetBridge
 
     internal static IArrowArray ReadColumn(IntPtr rowGroupReader, Field field)
     {
-        ArgumentNullException.ThrowIfNull(field);
+        TargetFrameworkCompat.ThrowIfNull(field);
 
         NativeError error = default;
         var nativeArray = CArrowArray.Create();
 
         try
         {
-            var result = parquet_row_group_reader_read_column(rowGroupReader, field.Name, nativeArray, &error);
-            if (result == 0)
+            IntPtr columnName = TargetFrameworkCompat.StringToCoTaskMemUtf8(field.Name);
+            try
             {
-                return ArrowArrayImporter.Import(nativeArray, field.DataType);
-            }
+                var result = parquet_row_group_reader_read_column(rowGroupReader, columnName, nativeArray, &error);
+                if (result == 0)
+                {
+                    return ArrowArrayImporter.Import(nativeArray, field.DataType);
+                }
 
-            throw CreateException(result, error.Message);
+                throw CreateException(result, error.Message);
+            }
+            finally
+            {
+                Marshal.FreeCoTaskMem(columnName);
+            }
         }
         catch (DllNotFoundException ex)
         {
@@ -273,6 +285,7 @@ internal static unsafe class NativeParquetBridge
         }
     }
 
+#if NET8_0_OR_GREATER
     private static IntPtr ResolveNativeLibrary(string libraryName, Assembly assembly, DllImportSearchPath? searchPath)
     {
         if (!string.Equals(libraryName, NativeLibraryBaseName, StringComparison.Ordinal))
@@ -290,6 +303,25 @@ internal static unsafe class NativeParquetBridge
 
         return IntPtr.Zero;
     }
+#else
+    private static void PreloadNativeLibrary(Assembly assembly)
+    {
+        if (!TargetFrameworkCompat.IsWindows())
+        {
+            return;
+        }
+
+        // netstandard2.0 has no NativeLibrary resolver hook. Preloading the exact
+        // packaged DLL path lets subsequent DllImport calls bind through Windows.
+        foreach (var candidate in EnumerateNativeLibraryCandidates(assembly))
+        {
+            if (File.Exists(candidate) && LoadLibrary(candidate) != IntPtr.Zero)
+            {
+                return;
+            }
+        }
+    }
+#endif
 
     private static IEnumerable<string> EnumerateNativeLibraryCandidates(Assembly assembly)
     {
@@ -300,7 +332,7 @@ internal static unsafe class NativeParquetBridge
         {
             if (!string.IsNullOrWhiteSpace(path))
             {
-                roots.Add(path);
+                roots.Add(path!);
             }
         }
 
@@ -308,6 +340,8 @@ internal static unsafe class NativeParquetBridge
         AddRoot(Path.GetDirectoryName(assembly.Location));
         AddRoot(Environment.CurrentDirectory);
 
+        // Useful for tests and host applications that extract native assets outside
+        // the standard NuGet output layout.
         var environmentHint = Environment.GetEnvironmentVariable("PARQUET_RS_FOR_DOTNET_NATIVE_DIR");
         AddRoot(environmentHint);
 
@@ -330,18 +364,20 @@ internal static unsafe class NativeParquetBridge
                 yield return Path.Combine(current.FullName, "native", "target", "release", fileName);
                 yield return Path.Combine(current.FullName, "src", "bin", "Debug", "net8.0", "native", fileName);
                 yield return Path.Combine(current.FullName, "src", "bin", "Release", "net8.0", "native", fileName);
+                yield return Path.Combine(current.FullName, "src", "bin", "Debug", "netstandard2.0", "native", fileName);
+                yield return Path.Combine(current.FullName, "src", "bin", "Release", "netstandard2.0", "native", fileName);
             }
         }
     }
 
     private static string GetPlatformLibraryFileName()
     {
-        if (OperatingSystem.IsWindows())
+        if (TargetFrameworkCompat.IsWindows())
         {
             return NativeLibraryBaseName + ".dll";
         }
 
-        if (OperatingSystem.IsMacOS())
+        if (TargetFrameworkCompat.IsMacOS())
         {
             return "lib" + NativeLibraryBaseName + ".dylib";
         }
@@ -359,7 +395,7 @@ internal static unsafe class NativeParquetBridge
     {
         var text = message == IntPtr.Zero
             ? "Native parquet writer failed."
-            : Marshal.PtrToStringUTF8(message) ?? "Native parquet writer failed.";
+            : TargetFrameworkCompat.PtrToStringUtf8(message) ?? "Native parquet writer failed.";
 
         if (message != IntPtr.Zero)
         {
@@ -430,9 +466,14 @@ internal static unsafe class NativeParquetBridge
     [DllImport("parquet_rs_for_dotnet", CallingConvention = CallingConvention.Cdecl)]
     private static extern int parquet_row_group_reader_read_column(
         IntPtr rowGroupReader,
-        [MarshalAs(UnmanagedType.LPUTF8Str)] string columnName,
+        IntPtr columnName,
         CArrowArray* array,
         NativeError* error);
+
+#if !NET8_0_OR_GREATER
+    [DllImport("kernel32", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern IntPtr LoadLibrary(string fileName);
+#endif
 
     [DllImport("parquet_rs_for_dotnet", CallingConvention = CallingConvention.Cdecl)]
     private static extern void parquet_row_group_reader_dispose(IntPtr rowGroupReader);
@@ -461,7 +502,7 @@ internal static unsafe class NativeParquetBridge
 
         public static NativeOptionScope Create(ParquetWriteOptions options)
         {
-            ArgumentNullException.ThrowIfNull(options);
+            TargetFrameworkCompat.ThrowIfNull(options);
 
             var scope = new NativeOptionScope(new ParquetWriteOptionsNative
             {
@@ -520,7 +561,7 @@ internal static unsafe class NativeParquetBridge
                 return IntPtr.Zero;
             }
 
-            var pointer = Marshal.StringToCoTaskMemUTF8(value);
+            var pointer = TargetFrameworkCompat.StringToCoTaskMemUtf8(value);
             allocated.Add(pointer);
             return pointer;
         }

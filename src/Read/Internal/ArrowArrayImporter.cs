@@ -8,7 +8,7 @@ internal static unsafe class ArrowArrayImporter
 {
     public static IArrowArray Import(CArrowArray* nativeArray, IArrowType arrowType)
     {
-        ArgumentNullException.ThrowIfNull(arrowType);
+        TargetFrameworkCompat.ThrowIfNull(arrowType);
         return CArrowArrayImporter.ImportArray(nativeArray, arrowType);
     }
 }

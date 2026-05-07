@@ -18,7 +18,7 @@ internal sealed class ArrowRecordBatchBuilder
     public ArrowRecordBatchBuilder(ParquetSchema schema, ParquetWriteOptions options)
     {
         _schema = schema ?? throw new ArgumentNullException(nameof(schema));
-        ArgumentNullException.ThrowIfNull(options);
+        TargetFrameworkCompat.ThrowIfNull(options);
 
         _arrowSchema = PublicSchemaMapper.Map(schema);
         _arrowTypes = new IArrowType[schema.Columns.Count];
@@ -34,7 +34,7 @@ internal sealed class ArrowRecordBatchBuilder
 
     public RecordBatch Build(IReadOnlyList<System.Array> columns)
     {
-        ArgumentNullException.ThrowIfNull(columns);
+        TargetFrameworkCompat.ThrowIfNull(columns);
         ValidateColumnCount(columns.Count);
 
         var rowCount = ResolveRowCount(columns);
@@ -62,7 +62,7 @@ internal sealed class ArrowRecordBatchBuilder
 
     public RecordBatch Build(IReadOnlyList<IArrowArray> columns)
     {
-        ArgumentNullException.ThrowIfNull(columns);
+        TargetFrameworkCompat.ThrowIfNull(columns);
         ValidateColumnCount(columns.Count);
 
         var rowCount = ResolveRowCount(columns);

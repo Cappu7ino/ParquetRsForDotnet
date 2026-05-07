@@ -12,7 +12,7 @@ internal static class StringArrowArrayFactory
 
     public static StringArray Build(string?[] values)
     {
-        ArgumentNullException.ThrowIfNull(values);
+        TargetFrameworkCompat.ThrowIfNull(values);
 
         var hasNulls = false;
         for (var i = 0; i < values.Length; i++)
@@ -64,10 +64,10 @@ internal static class StringArrowArrayFactory
                 validity[i >> 3] |= (byte)(1 << (i & 7));
             }
 
-            currentOffset += s_utf8.GetBytes(value, data.AsSpan(currentOffset));
+            currentOffset += s_utf8.GetBytes(value, 0, value.Length, data, currentOffset);
         }
 
-        offsets[^1] = currentOffset;
+        offsets[offsets.Length - 1] = currentOffset;
 
         var offsetBytes = new byte[offsets.Length * sizeof(int)];
         Buffer.BlockCopy(offsets, 0, offsetBytes, 0, offsetBytes.Length);

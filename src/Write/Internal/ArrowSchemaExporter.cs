@@ -12,7 +12,7 @@ internal sealed unsafe class ArrowSchemaExporter : IDisposable
 
     public ArrowSchemaExporter(Schema schema)
     {
-        ArgumentNullException.ThrowIfNull(schema);
+        TargetFrameworkCompat.ThrowIfNull(schema);
 
         _nativeSchema = CArrowSchema.Create();
         CArrowSchemaExporter.ExportSchema(schema, _nativeSchema);

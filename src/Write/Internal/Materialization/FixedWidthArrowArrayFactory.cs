@@ -7,8 +7,6 @@ namespace ParquetRsForDotnet.Internal.Materialization;
 
 internal static class FixedWidthArrowArrayFactory
 {
-    private static readonly int s_unixEpochDayNumber = DateOnly.FromDateTime(DateTime.UnixEpoch).DayNumber;
-
     public static Int8Array Build(sbyte[] values, MemoryAllocator allocator)
         => Build(values, Int8Type.Default, allocator, static data => new Int8Array(data));
 
@@ -39,6 +37,9 @@ internal static class FixedWidthArrowArrayFactory
     public static DoubleArray Build(double[] values, MemoryAllocator allocator)
         => Build(values, DoubleType.Default, allocator, static data => new DoubleArray(data));
 
+#if NET8_0_OR_GREATER
+    private static readonly int s_unixEpochDayNumber = DateOnly.FromDateTime(TargetFrameworkCompat.UnixEpoch).DayNumber;
+
     public static Date32Array Build(DateOnly[] values, MemoryAllocator allocator)
     {
         var normalized = new int[values.Length];
@@ -49,6 +50,7 @@ internal static class FixedWidthArrowArrayFactory
 
         return Build(normalized, Date32Type.Default, allocator, static data => new Date32Array(data));
     }
+#endif
 
     public static TimestampArray Build(DateTime[] values, TimestampType timestampType, MemoryAllocator allocator)
     {
@@ -83,7 +85,7 @@ internal static class FixedWidthArrowArrayFactory
     private static long NormalizeTimestamp(DateTime value, TimeUnit unit)
     {
         var utcValue = value.Kind == DateTimeKind.Utc ? value : value.ToUniversalTime();
-        var epochTicks = utcValue.Ticks - DateTime.UnixEpoch.Ticks;
+        var epochTicks = utcValue.Ticks - TargetFrameworkCompat.UnixEpoch.Ticks;
 
         return unit switch
         {

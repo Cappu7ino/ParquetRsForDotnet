@@ -2,7 +2,9 @@ using Apache.Arrow;
 using Apache.Arrow.Memory;
 using Parquet;
 using Parquet.Data;
+#if NET8_0_OR_GREATER
 using ParquetRsForDotnet.Internal;
+#endif
 
 namespace ParquetRsForDotnet.Tests;
 
@@ -188,7 +190,7 @@ public sealed class ParquetWriterTests
         using (var writer = new ParquetFileWriter(destination, schema))
         {
             writer.WriteBatch(
-                new DateOnly?[] { new(2024, 5, 1), null, new(2024, 5, 3) },
+                CreateNullableDateArray(new DateTime(2024, 5, 1), null, new DateTime(2024, 5, 3)),
                 new DateTime?[]
                 {
                     new(2024, 6, 1, 1, 2, 3, DateTimeKind.Utc),
@@ -238,7 +240,7 @@ public sealed class ParquetWriterTests
             writer.WriteBatch(
                 new int?[] { 10, null, 30, null },
                 new double?[] { 1.25d, null, 3.5d, 4.75d },
-                new DateOnly?[] { new(2024, 5, 1), null, new(2024, 5, 3), new(2024, 5, 4) },
+                CreateNullableDateArray(new DateTime(2024, 5, 1), null, new DateTime(2024, 5, 3), new DateTime(2024, 5, 4)),
                 new DateTime?[]
                 {
                     new(2024, 6, 1, 1, 2, 3, DateTimeKind.Utc),
@@ -291,8 +293,8 @@ public sealed class ParquetWriterTests
         }))
         {
             writer.WriteBatch(
-                new DateOnly[] { new(2024, 5, 1), new(2024, 5, 2), new(2024, 5, 3) },
-                new DateOnly[] { new(2024, 6, 1), new(2024, 6, 2), new(2024, 6, 3) },
+                CreateDateArray(new DateTime(2024, 5, 1), new DateTime(2024, 5, 2), new DateTime(2024, 5, 3)),
+                CreateDateArray(new DateTime(2024, 6, 1), new DateTime(2024, 6, 2), new DateTime(2024, 6, 3)),
                 new DateTime[]
                 {
                     new(2024, 7, 1, 1, 2, 3, DateTimeKind.Utc),
@@ -316,9 +318,9 @@ public sealed class ParquetWriterTests
         Assert.Equal(
             new[]
             {
-                new DateTimeOffset(new DateOnly(2024, 6, 1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)).ToUnixTimeMilliseconds(),
-                new DateTimeOffset(new DateOnly(2024, 6, 2).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)).ToUnixTimeMilliseconds(),
-                new DateTimeOffset(new DateOnly(2024, 6, 3).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc)).ToUnixTimeMilliseconds(),
+                MillisecondsSinceUnixEpoch(new DateTime(2024, 6, 1)),
+                MillisecondsSinceUnixEpoch(new DateTime(2024, 6, 2)),
+                MillisecondsSinceUnixEpoch(new DateTime(2024, 6, 3)),
             },
             (long[])date64Column.Data);
         Assert.Equal(
@@ -377,9 +379,9 @@ public sealed class ParquetWriterTests
         using (var writer = new ParquetFileWriter(destination, schema))
         {
             using var dates = new Date32Array.Builder()
-                .Append(new DateOnly(2024, 7, 1))
+                .Append(new DateTime(2024, 7, 1))
                 .AppendNull()
-                .Append(new DateOnly(2024, 7, 3))
+                .Append(new DateTime(2024, 7, 3))
                 .Build(allocator);
             using var timestamps = new TimestampArray.Builder(new Apache.Arrow.Types.TimestampType(Apache.Arrow.Types.TimeUnit.Millisecond, "UTC"))
                 .Append(new DateTimeOffset(new DateTime(2024, 7, 1, 10, 0, 0, DateTimeKind.Utc)))
@@ -411,6 +413,7 @@ public sealed class ParquetWriterTests
     [Fact]
     public void ManagedSink_ReportsWriteFailures()
     {
+#if NET8_0_OR_GREATER
         using var stream = new ThrowingWriteStream();
         using var sink = new ManagedParquetSink(stream);
 
@@ -425,6 +428,28 @@ public sealed class ParquetWriterTests
                 Assert.NotEqual(IntPtr.Zero, (IntPtr)errorPtr);
             }
         }
+#else
+        var schema = new ParquetSchema(new[] { new ParquetColumn("id", ParquetColumnType.Int32) });
+        using var stream = new ThrowingWriteStream();
+        var writer = new ParquetFileWriter(stream, schema);
+
+        try
+        {
+            writer.WriteBatch(new[] { 1, 2, 3 });
+            var exception = Assert.Throws<NativeParquetException>(() => writer.Finish());
+            Assert.True(exception.ErrorCode is NativeErrorCode.SinkWriteFailed or NativeErrorCode.ParquetEncodeFailed);
+        }
+        finally
+        {
+            try
+            {
+                writer.Dispose();
+            }
+            catch (NativeParquetException)
+            {
+            }
+        }
+#endif
     }
 
     /// <summary>
@@ -437,9 +462,47 @@ public sealed class ParquetWriterTests
             throw new InvalidOperationException("write failed");
         }
 
+#if NET8_0_OR_GREATER
         public override void Write(ReadOnlySpan<byte> buffer)
         {
             throw new InvalidOperationException("write failed");
         }
+#endif
+    }
+
+    private static System.Array CreateNullableDateArray(params DateTime?[] values)
+    {
+#if NET8_0_OR_GREATER
+        var dates = new DateOnly?[values.Length];
+        for (var i = 0; i < values.Length; i++)
+        {
+            var value = values[i];
+            dates[i] = value.HasValue ? DateOnly.FromDateTime(value.GetValueOrDefault()) : null;
+        }
+
+        return dates;
+#else
+        return values;
+#endif
+    }
+
+    private static System.Array CreateDateArray(params DateTime[] values)
+    {
+#if NET8_0_OR_GREATER
+        var dates = new DateOnly[values.Length];
+        for (var i = 0; i < values.Length; i++)
+        {
+            dates[i] = DateOnly.FromDateTime(values[i]);
+        }
+
+        return dates;
+#else
+        return values;
+#endif
+    }
+
+    private static long MillisecondsSinceUnixEpoch(DateTime value)
+    {
+        return new DateTimeOffset(DateTime.SpecifyKind(value.Date, DateTimeKind.Utc)).ToUnixTimeMilliseconds();
     }
 }

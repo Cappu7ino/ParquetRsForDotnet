@@ -4,6 +4,14 @@ using Apache.Arrow;
 using Apache.Arrow.Arrays;
 using Apache.Arrow.Types;
 
+#if NET8_0_OR_GREATER
+using DateClrType = System.DateOnly;
+#else
+// netstandard2.0 consumers cannot reference DateOnly, so date logical types
+// materialize as DateTime while preserving date-only values at midnight.
+using DateClrType = System.DateTime;
+#endif
+
 namespace ParquetRsForDotnet.Internal;
 
 internal sealed class ArrowArrayClrMaterializer
@@ -12,8 +20,8 @@ internal sealed class ArrowArrayClrMaterializer
 
     public System.Array Materialize(IArrowArray array, Field field)
     {
-        ArgumentNullException.ThrowIfNull(array);
-        ArgumentNullException.ThrowIfNull(field);
+        TargetFrameworkCompat.ThrowIfNull(array);
+        TargetFrameworkCompat.ThrowIfNull(field);
 
         return field.DataType.TypeId switch
         {
@@ -41,7 +49,7 @@ internal sealed class ArrowArrayClrMaterializer
 
     public static Type GetExpectedClrType(Field field)
     {
-        ArgumentNullException.ThrowIfNull(field);
+        TargetFrameworkCompat.ThrowIfNull(field);
 
         return field.DataType switch
         {
@@ -60,7 +68,7 @@ internal sealed class ArrowArrayClrMaterializer
             BinaryType => typeof(byte[]),
             Decimal128Type => typeof(SqlDecimal),
             FixedSizeBinaryType fixedSizeBinaryType => fixedSizeBinaryType.ByteWidth == 16 ? typeof(Guid) : typeof(byte[]),
-            Date32Type or Date64Type => typeof(DateOnly),
+            Date32Type or Date64Type => GetExpectedDateClrType(),
             TimestampType => typeof(DateTime),
             _ => throw new NotSupportedException($"Arrow type '{field.DataType}' is not supported for CLR materialization."),
         };
@@ -204,7 +212,7 @@ internal sealed class ArrowArrayClrMaterializer
             {
                 for (var i = 0; i < values.Length; i++)
                 {
-                    values[i] = new Guid(array.GetBytes(i));
+                    values[i] = CreateGuid(array.GetBytes(i));
                 }
 
                 return values;
@@ -212,7 +220,7 @@ internal sealed class ArrowArrayClrMaterializer
 
             for (var i = 0; i < values.Length; i++)
             {
-                values[i] = array.IsValid(i) ? new Guid(array.GetBytes(i)) : throw CreateUnexpectedNullException(i);
+                values[i] = array.IsValid(i) ? CreateGuid(array.GetBytes(i)) : throw CreateUnexpectedNullException(i);
             }
 
             return values;
@@ -223,7 +231,7 @@ internal sealed class ArrowArrayClrMaterializer
         {
             for (var i = 0; i < nullableValues.Length; i++)
             {
-                nullableValues[i] = new Guid(array.GetBytes(i));
+                nullableValues[i] = CreateGuid(array.GetBytes(i));
             }
 
             return nullableValues;
@@ -231,7 +239,7 @@ internal sealed class ArrowArrayClrMaterializer
 
         for (var i = 0; i < nullableValues.Length; i++)
         {
-            nullableValues[i] = array.IsValid(i) ? new Guid(array.GetBytes(i)) : null;
+            nullableValues[i] = array.IsValid(i) ? CreateGuid(array.GetBytes(i)) : null;
         }
 
         return nullableValues;
@@ -262,12 +270,12 @@ internal sealed class ArrowArrayClrMaterializer
 
         if (!isNullable)
         {
-            var values = new DateOnly[array.Length];
+            var values = CreateDateArray(array.Length);
             if (array.NullCount == 0)
             {
                 for (var i = 0; i < values.Length; i++)
                 {
-                    values[i] = array.GetDateOnly(i) ?? throw CreateUnexpectedNullException(i);
+                    values[i] = GetDate32Value(array, i) ?? throw CreateUnexpectedNullException(i);
                 }
 
                 return values;
@@ -275,18 +283,18 @@ internal sealed class ArrowArrayClrMaterializer
 
             for (var i = 0; i < values.Length; i++)
             {
-                values[i] = array.GetDateOnly(i) ?? throw CreateUnexpectedNullException(i);
+                values[i] = GetDate32Value(array, i) ?? throw CreateUnexpectedNullException(i);
             }
 
             return values;
         }
 
-        var nullableValues = new DateOnly?[array.Length];
+        var nullableValues = CreateNullableDateArray(array.Length);
         if (array.NullCount == 0)
         {
             for (var i = 0; i < nullableValues.Length; i++)
             {
-                nullableValues[i] = array.GetDateOnly(i) ?? throw CreateUnexpectedNullException(i);
+                nullableValues[i] = GetDate32Value(array, i) ?? throw CreateUnexpectedNullException(i);
             }
 
             return nullableValues;
@@ -294,7 +302,7 @@ internal sealed class ArrowArrayClrMaterializer
 
         for (var i = 0; i < nullableValues.Length; i++)
         {
-            nullableValues[i] = array.GetDateOnly(i);
+            nullableValues[i] = GetDate32Value(array, i);
         }
 
         return nullableValues;
@@ -309,12 +317,12 @@ internal sealed class ArrowArrayClrMaterializer
 
         if (!isNullable)
         {
-            var values = new DateOnly[array.Length];
+            var values = CreateDateArray(array.Length);
             if (array.NullCount == 0)
             {
                 for (var i = 0; i < values.Length; i++)
                 {
-                    values[i] = array.GetDateOnly(i) ?? throw CreateUnexpectedNullException(i);
+                    values[i] = GetDate64Value(array, i) ?? throw CreateUnexpectedNullException(i);
                 }
 
                 return values;
@@ -322,18 +330,18 @@ internal sealed class ArrowArrayClrMaterializer
 
             for (var i = 0; i < values.Length; i++)
             {
-                values[i] = array.GetDateOnly(i) ?? throw CreateUnexpectedNullException(i);
+                values[i] = GetDate64Value(array, i) ?? throw CreateUnexpectedNullException(i);
             }
 
             return values;
         }
 
-        var nullableValues = new DateOnly?[array.Length];
+        var nullableValues = CreateNullableDateArray(array.Length);
         if (array.NullCount == 0)
         {
             for (var i = 0; i < nullableValues.Length; i++)
             {
-                nullableValues[i] = array.GetDateOnly(i) ?? throw CreateUnexpectedNullException(i);
+                nullableValues[i] = GetDate64Value(array, i) ?? throw CreateUnexpectedNullException(i);
             }
 
             return nullableValues;
@@ -341,7 +349,7 @@ internal sealed class ArrowArrayClrMaterializer
 
         for (var i = 0; i < nullableValues.Length; i++)
         {
-            nullableValues[i] = array.GetDateOnly(i);
+            nullableValues[i] = GetDate64Value(array, i);
         }
 
         return nullableValues;
@@ -647,7 +655,7 @@ internal sealed class ArrowArrayClrMaterializer
         var buffer = array.ValueBuffer.Span;
         for (var i = 0; i < values.Length; i++)
         {
-            values[i] = new Guid(buffer.Slice(i * 16, 16));
+            values[i] = CreateGuid(buffer.Slice(i * 16, 16));
         }
 
         return values;
@@ -661,7 +669,7 @@ internal sealed class ArrowArrayClrMaterializer
         {
             for (var i = 0; i < values.Length; i++)
             {
-                values[i] = new Guid(buffer.Slice(i * 16, 16));
+                values[i] = CreateGuid(buffer.Slice(i * 16, 16));
             }
 
             return values;
@@ -671,7 +679,7 @@ internal sealed class ArrowArrayClrMaterializer
         for (var i = 0; i < values.Length; i++)
         {
             values[i] = IsValid(validity, i)
-                ? new Guid(buffer.Slice(i * 16, 16))
+                ? CreateGuid(buffer.Slice(i * 16, 16))
                 : null;
         }
 
@@ -705,9 +713,9 @@ internal sealed class ArrowArrayClrMaterializer
         return values;
     }
 
-    private static DateOnly[] MaterializeRequiredDate32FromValues(Date32Array array)
+    private static System.Array MaterializeRequiredDate32FromValues(Date32Array array)
     {
-        var values = new DateOnly[array.Length];
+        var values = CreateDateArray(array.Length);
         var raw = array.Values;
         for (var i = 0; i < values.Length; i++)
         {
@@ -717,9 +725,9 @@ internal sealed class ArrowArrayClrMaterializer
         return values;
     }
 
-    private static DateOnly?[] MaterializeNullableDate32FromValues(Date32Array array)
+    private static System.Array MaterializeNullableDate32FromValues(Date32Array array)
     {
-        var values = new DateOnly?[array.Length];
+        var values = CreateNullableDateArray(array.Length);
         var raw = array.Values;
         if (array.NullCount == 0)
         {
@@ -742,9 +750,9 @@ internal sealed class ArrowArrayClrMaterializer
         return values;
     }
 
-    private static DateOnly[] MaterializeRequiredDate64FromValues(Date64Array array)
+    private static System.Array MaterializeRequiredDate64FromValues(Date64Array array)
     {
-        var values = new DateOnly[array.Length];
+        var values = CreateDateArray(array.Length);
         var raw = array.Values;
         for (var i = 0; i < values.Length; i++)
         {
@@ -754,9 +762,9 @@ internal sealed class ArrowArrayClrMaterializer
         return values;
     }
 
-    private static DateOnly?[] MaterializeNullableDate64FromValues(Date64Array array)
+    private static System.Array MaterializeNullableDate64FromValues(Date64Array array)
     {
-        var values = new DateOnly?[array.Length];
+        var values = CreateNullableDateArray(array.Length);
         var raw = array.Values;
         if (array.NullCount == 0)
         {
@@ -818,7 +826,20 @@ internal sealed class ArrowArrayClrMaterializer
 
     private static string DecodeString(ReadOnlySpan<byte> bytes, int start, int end)
     {
+#if NET8_0_OR_GREATER
         return s_utf8.GetString(bytes.Slice(start, end - start));
+#else
+        return s_utf8.GetString(bytes.Slice(start, end - start).ToArray());
+#endif
+    }
+
+    private static Guid CreateGuid(ReadOnlySpan<byte> bytes)
+    {
+#if NET8_0_OR_GREATER
+        return new Guid(bytes);
+#else
+        return new Guid(bytes.ToArray());
+#endif
     }
 
     private static byte[] CopySlice(ReadOnlySpan<byte> bytes, int start, int end)
@@ -826,14 +847,47 @@ internal sealed class ArrowArrayClrMaterializer
         return bytes.Slice(start, end - start).ToArray();
     }
 
-    private static DateOnly ConvertDate64(long millisecondsSinceEpoch)
+    private static DateClrType ConvertDate64(long millisecondsSinceEpoch)
     {
+#if NET8_0_OR_GREATER
         return DateOnly.FromDateTime(DateTimeOffset.FromUnixTimeMilliseconds(millisecondsSinceEpoch).UtcDateTime);
+#else
+        return TargetFrameworkCompat.UnixEpoch.AddMilliseconds(millisecondsSinceEpoch).Date;
+#endif
     }
 
-    private static DateOnly ConvertDate32(int daysSinceEpoch)
+    private static DateClrType ConvertDate32(int daysSinceEpoch)
     {
-        return DateOnly.FromDateTime(DateTime.UnixEpoch.Date).AddDays(daysSinceEpoch);
+#if NET8_0_OR_GREATER
+        return DateOnly.FromDateTime(TargetFrameworkCompat.UnixEpoch.Date).AddDays(daysSinceEpoch);
+#else
+        return TargetFrameworkCompat.UnixEpoch.Date.AddDays(daysSinceEpoch);
+#endif
+    }
+
+    private static DateClrType? GetDate32Value(Date32Array array, int index)
+    {
+        return array.IsValid(index) ? ConvertDate32(array.Values[index]) : null;
+    }
+
+    private static DateClrType? GetDate64Value(Date64Array array, int index)
+    {
+        return array.IsValid(index) ? ConvertDate64(array.Values[index]) : null;
+    }
+
+    private static DateClrType[] CreateDateArray(int length)
+    {
+        return new DateClrType[length];
+    }
+
+    private static DateClrType?[] CreateNullableDateArray(int length)
+    {
+        return new DateClrType?[length];
+    }
+
+    private static Type GetExpectedDateClrType()
+    {
+        return typeof(DateClrType);
     }
 
     private static DateTime ConvertTimestamp(long value, TimestampType timestampType)
@@ -847,7 +901,7 @@ internal sealed class ArrowArrayClrMaterializer
             _ => throw new NotSupportedException($"Unsupported timestamp unit '{timestampType.Unit}'."),
         };
 
-        return new DateTime(DateTime.UnixEpoch.Ticks + ticks, DateTimeKind.Utc);
+        return new DateTime(TargetFrameworkCompat.UnixEpoch.Ticks + ticks, DateTimeKind.Utc);
     }
 
     private static bool IsFastTimestampType(TimestampType timestampType)

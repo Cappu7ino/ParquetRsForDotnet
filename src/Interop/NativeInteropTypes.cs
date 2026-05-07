@@ -21,27 +21,47 @@ internal unsafe struct ParquetOutputSink
     /// <summary>
     /// Gets or sets the native callback used to write bytes into the managed sink.
     /// </summary>
+#if NET8_0_OR_GREATER
     public delegate* unmanaged[Cdecl]<IntPtr, byte*, nuint, nuint*, int> Write;
+#else
+    public IntPtr Write;
+#endif
 
     /// <summary>
     /// Gets or sets the native callback used to flush the managed sink.
     /// </summary>
+#if NET8_0_OR_GREATER
     public delegate* unmanaged[Cdecl]<IntPtr, int> Flush;
+#else
+    public IntPtr Flush;
+#endif
 
     /// <summary>
     /// Gets or sets the native callback used to complete the managed sink.
     /// </summary>
+#if NET8_0_OR_GREATER
     public delegate* unmanaged[Cdecl]<IntPtr, int> Close;
+#else
+    public IntPtr Close;
+#endif
 
     /// <summary>
     /// Gets or sets the native callback used to abort the managed sink.
     /// </summary>
+#if NET8_0_OR_GREATER
     public delegate* unmanaged[Cdecl]<IntPtr, int> Abort;
+#else
+    public IntPtr Abort;
+#endif
 
     /// <summary>
     /// Gets or sets the native callback used to fetch the last sink error.
     /// </summary>
+#if NET8_0_OR_GREATER
     public delegate* unmanaged[Cdecl]<IntPtr, byte*> GetLastError;
+#else
+    public IntPtr GetLastError;
+#endif
 
     /// <summary>
     /// Gets or sets the opaque callback context for the sink.
@@ -58,17 +78,29 @@ internal unsafe struct ParquetInputSource
     /// <summary>
     /// Gets or sets the native callback used to read bytes at a given offset from the managed source.
     /// </summary>
+#if NET8_0_OR_GREATER
     public delegate* unmanaged[Cdecl]<IntPtr, long, byte*, nuint, nuint*, int> ReadAt;
+#else
+    public IntPtr ReadAt;
+#endif
 
     /// <summary>
     /// Gets or sets the native callback used to retrieve the total source length.
     /// </summary>
+#if NET8_0_OR_GREATER
     public delegate* unmanaged[Cdecl]<IntPtr, long*, int> GetLength;
+#else
+    public IntPtr GetLength;
+#endif
 
     /// <summary>
     /// Gets or sets the native callback used to fetch the last source error.
     /// </summary>
+#if NET8_0_OR_GREATER
     public delegate* unmanaged[Cdecl]<IntPtr, byte*> GetLastError;
+#else
+    public IntPtr GetLastError;
+#endif
 
     /// <summary>
     /// Gets or sets the opaque callback context for the source.

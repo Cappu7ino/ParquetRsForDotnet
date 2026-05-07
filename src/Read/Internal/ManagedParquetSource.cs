@@ -1,5 +1,5 @@
-using System.Runtime.InteropServices;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using ParquetRsForDotnet.Interop;
 
 namespace ParquetRsForDotnet.Internal;
@@ -12,13 +12,20 @@ internal sealed unsafe class ManagedParquetSource : IDisposable
     private readonly GCHandle _handle;
     private readonly Stream _source;
     private readonly object _sync = new();
+#if !NET8_0_OR_GREATER
+    // Keep delegate instances rooted for as long as the native reader can call them.
+    // Marshal.GetFunctionPointerForDelegate does not keep the delegate alive.
+    private readonly ReadAtCallbackDelegate _readAtCallback;
+    private readonly GetLengthCallbackDelegate _getLengthCallback;
+    private readonly GetLastErrorCallbackDelegate _getLastErrorCallback;
+#endif
     private bool _disposed;
     private string? _lastError;
     private IntPtr _lastErrorPtr;
 
     public ManagedParquetSource(Stream source)
     {
-        ArgumentNullException.ThrowIfNull(source);
+        TargetFrameworkCompat.ThrowIfNull(source);
 
         if (!source.CanSeek)
         {
@@ -27,6 +34,7 @@ internal sealed unsafe class ManagedParquetSource : IDisposable
 
         _source = source;
         _handle = GCHandle.Alloc(this);
+#if NET8_0_OR_GREATER
         NativeSource = new ParquetInputSource
         {
             ReadAt = &ReadAtCallback,
@@ -34,6 +42,18 @@ internal sealed unsafe class ManagedParquetSource : IDisposable
             GetLastError = &GetLastErrorCallback,
             Context = GCHandle.ToIntPtr(_handle),
         };
+#else
+        _readAtCallback = ReadAtCallback;
+        _getLengthCallback = GetLengthCallback;
+        _getLastErrorCallback = GetLastErrorCallback;
+        NativeSource = new ParquetInputSource
+        {
+            ReadAt = Marshal.GetFunctionPointerForDelegate(_readAtCallback),
+            GetLength = Marshal.GetFunctionPointerForDelegate(_getLengthCallback),
+            GetLastError = Marshal.GetFunctionPointerForDelegate(_getLastErrorCallback),
+            Context = GCHandle.ToIntPtr(_handle),
+        };
+#endif
     }
 
     public ParquetInputSource NativeSource { get; }
@@ -63,8 +83,15 @@ internal sealed unsafe class ManagedParquetSource : IDisposable
         return (ManagedParquetSource)GCHandle.FromIntPtr(context).Target!;
     }
 
+#if NET8_0_OR_GREATER
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static int ReadAtCallback(IntPtr context, long offset, byte* buffer, nuint length, nuint* bytesRead)
+#else
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate int ReadAtCallbackDelegate(IntPtr context, long offset, byte* buffer, UIntPtr length, UIntPtr* bytesRead);
+
+    private static int ReadAtCallback(IntPtr context, long offset, byte* buffer, UIntPtr length, UIntPtr* bytesRead)
+#endif
     {
         var source = FromContext(context);
         try
@@ -77,10 +104,22 @@ internal sealed unsafe class ManagedParquetSource : IDisposable
             lock (source._sync)
             {
                 source._source.Position = offset;
+#if NET8_0_OR_GREATER
                 var read = source._source.Read(new Span<byte>(buffer, checked((int)length)));
+#else
+                // Stream span overloads are unavailable on netstandard2.0, so read
+                // into a managed buffer and copy only the bytes actually read.
+                byte[] managedBuffer = new byte[checked((int)(ulong)length)];
+                var read = source._source.Read(managedBuffer, 0, managedBuffer.Length);
+                Marshal.Copy(managedBuffer, 0, (IntPtr)buffer, read);
+#endif
                 if (bytesRead != null)
                 {
+#if NET8_0_OR_GREATER
                     *bytesRead = (nuint)read;
+#else
+                    *bytesRead = (UIntPtr)read;
+#endif
                 }
             }
 
@@ -93,7 +132,13 @@ internal sealed unsafe class ManagedParquetSource : IDisposable
         }
     }
 
+#if NET8_0_OR_GREATER
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+#else
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate int GetLengthCallbackDelegate(IntPtr context, long* length);
+
+#endif
     private static int GetLengthCallback(IntPtr context, long* length)
     {
         var source = FromContext(context);
@@ -118,7 +163,13 @@ internal sealed unsafe class ManagedParquetSource : IDisposable
         }
     }
 
+#if NET8_0_OR_GREATER
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+#else
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate byte* GetLastErrorCallbackDelegate(IntPtr context);
+
+#endif
     private static byte* GetLastErrorCallback(IntPtr context)
     {
         var source = FromContext(context);
@@ -132,7 +183,7 @@ internal sealed unsafe class ManagedParquetSource : IDisposable
             Marshal.FreeCoTaskMem(source._lastErrorPtr);
         }
 
-        source._lastErrorPtr = Marshal.StringToCoTaskMemUTF8(source._lastError);
+        source._lastErrorPtr = TargetFrameworkCompat.StringToCoTaskMemUtf8(source._lastError);
         return (byte*)source._lastErrorPtr;
     }
 

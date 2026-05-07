@@ -4,7 +4,7 @@ internal static class ParquetWriteOptionsDefaults
 {
     public static ParquetWriteOptions ApplyForBatchWriter(ParquetWriteOptions options)
     {
-        ArgumentNullException.ThrowIfNull(options);
+        TargetFrameworkCompat.ThrowIfNull(options);
 
         if (options.NativeWriteBatchSize is not null)
         {

@@ -29,19 +29,19 @@ public sealed class ParquetRowGroupReader : IDisposable
 
     public IArrowArray ReadColumn(int columnIndex)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        TargetFrameworkCompat.ThrowIfDisposed(_disposed, this);
         return NativeParquetBridge.ReadColumn(_nativeRowGroupReader, _owner.GetArrowField(columnIndex));
     }
 
     public IArrowArray ReadColumn(string columnName)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        TargetFrameworkCompat.ThrowIfDisposed(_disposed, this);
         return ReadColumn(_owner.GetColumnIndex(columnName));
     }
 
     public T[] ReadColumn<T>(int columnIndex)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        TargetFrameworkCompat.ThrowIfDisposed(_disposed, this);
 
         var field = _owner.GetArrowField(columnIndex);
         ValidateRequestedClrType<T>(field);
@@ -52,7 +52,7 @@ public sealed class ParquetRowGroupReader : IDisposable
 
     public T[] ReadColumn<T>(string columnName)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        TargetFrameworkCompat.ThrowIfDisposed(_disposed, this);
         return ReadColumn<T>(_owner.GetColumnIndex(columnName));
     }
 

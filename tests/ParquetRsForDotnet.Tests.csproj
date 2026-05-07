@@ -1,15 +1,21 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFrameworks>net8.0;net472</TargetFrameworks>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
     <SignAssembly>true</SignAssembly>
     <AssemblyOriginatorKeyFile>..\ParquetRsForDotnet.snk</AssemblyOriginatorKeyFile>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(TargetFramework)' == 'net472'">
+    <!-- ParquetSharp is unsigned; .NET Framework cannot load it from a strong-named test assembly. -->
+    <SignAssembly>false</SignAssembly>
   </PropertyGroup>
 
   <ItemGroup>
@@ -30,13 +36,15 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="**\*.cs" Exclude="bin\**\*;obj\**\*" />
+    <Compile Include="*.cs" />
   </ItemGroup>
 
   <Target Name="CopyNativeParquetLibraryFromMainProject" AfterTargets="Build">
     <ItemGroup>
       <NativeDll Include="..\src\bin\$(Configuration)\net8.0\native\parquet_rs_for_dotnet.dll"
-                 Condition="Exists('..\src\bin\$(Configuration)\net8.0\native\parquet_rs_for_dotnet.dll')" />
+                 Condition="'$(TargetFramework)' == 'net8.0' And Exists('..\src\bin\$(Configuration)\net8.0\native\parquet_rs_for_dotnet.dll')" />
+      <NativeDll Include="..\src\bin\$(Configuration)\netstandard2.0\native\parquet_rs_for_dotnet.dll"
+                 Condition="'$(TargetFramework)' == 'net472' And Exists('..\src\bin\$(Configuration)\netstandard2.0\native\parquet_rs_for_dotnet.dll')" />
     </ItemGroup>
 
     <Copy SourceFiles="@(NativeDll)"

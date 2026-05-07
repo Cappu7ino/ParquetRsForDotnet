@@ -11,7 +11,7 @@ public sealed class ParquetSchema
     /// <param name="columns">The top-level columns in strict write order.</param>
     public ParquetSchema(IEnumerable<ParquetColumn> columns)
     {
-        ArgumentNullException.ThrowIfNull(columns);
+        TargetFrameworkCompat.ThrowIfNull(columns);
 
         var materialized = columns.ToArray();
         if (materialized.Length == 0)
@@ -22,7 +22,7 @@ public sealed class ParquetSchema
         var names = new HashSet<string>(StringComparer.Ordinal);
         foreach (var column in materialized)
         {
-            ArgumentNullException.ThrowIfNull(column);
+            TargetFrameworkCompat.ThrowIfNull(column);
 
             if (!names.Add(column.Name))
             {

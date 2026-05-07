@@ -10,20 +10,20 @@ internal static class PublicSchemaMapper
 {
     public static Schema Map(ParquetSchema schema)
     {
-        ArgumentNullException.ThrowIfNull(schema);
+        TargetFrameworkCompat.ThrowIfNull(schema);
 
         return new Schema(schema.Columns.Select(MapField), metadata: []);
     }
 
     public static Field MapField(ParquetColumn column)
     {
-        ArgumentNullException.ThrowIfNull(column);
+        TargetFrameworkCompat.ThrowIfNull(column);
         return new Field(column.Name, MapType(column), column.IsNullable);
     }
 
     public static IArrowType MapType(ParquetColumn column)
     {
-        ArgumentNullException.ThrowIfNull(column);
+        TargetFrameworkCompat.ThrowIfNull(column);
 
         return column.ColumnType switch
         {
@@ -51,7 +51,7 @@ internal static class PublicSchemaMapper
 
     public static Type GetExpectedClrType(ParquetColumn column)
     {
-        ArgumentNullException.ThrowIfNull(column);
+        TargetFrameworkCompat.ThrowIfNull(column);
 
         return column.ColumnType switch
         {
@@ -69,7 +69,7 @@ internal static class PublicSchemaMapper
             ParquetColumnType.String => typeof(string),
             ParquetColumnType.Binary => typeof(byte[]),
             ParquetColumnType.Guid => typeof(Guid),
-            ParquetColumnType.Date32 or ParquetColumnType.Date64 => typeof(DateOnly),
+            ParquetColumnType.Date32 or ParquetColumnType.Date64 => GetExpectedDateClrType(),
             ParquetColumnType.Timestamp => typeof(DateTime),
             ParquetColumnType.Decimal128 => typeof(decimal),
             _ => throw new NotSupportedException($"Unsupported public column type '{column.ColumnType}'."),
@@ -78,8 +78,8 @@ internal static class PublicSchemaMapper
 
     public static bool AreEquivalent(IArrowType expected, IArrowType actual)
     {
-        ArgumentNullException.ThrowIfNull(expected);
-        ArgumentNullException.ThrowIfNull(actual);
+        TargetFrameworkCompat.ThrowIfNull(expected);
+        TargetFrameworkCompat.ThrowIfNull(actual);
 
         return (expected, actual) switch
         {
@@ -127,5 +127,16 @@ internal static class PublicSchemaMapper
             ParquetTimestampUnit.Nanosecond => TimeUnit.Nanosecond,
             _ => throw new NotSupportedException($"Unsupported timestamp unit '{unit}'."),
         };
+    }
+
+    private static Type GetExpectedDateClrType()
+    {
+#if NET8_0_OR_GREATER
+        return typeof(DateOnly);
+#else
+        // DateOnly is unavailable to netstandard2.0 consumers. Use DateTime for
+        // the public CLR-array contract while still mapping to parquet DATE.
+        return typeof(DateTime);
+#endif
     }
 }

@@ -138,19 +138,33 @@ public sealed class ParquetReaderTests
 
         var payload = rowGroup.ReadColumn<byte[]>(0);
         var traceIds = rowGroup.ReadColumn<Guid>(1);
+#if NET8_0_OR_GREATER
         var businessDates = rowGroup.ReadColumn<DateOnly?>(2);
         var snapshotDates = rowGroup.ReadColumn<DateOnly>(3);
+#else
+        var businessDates = rowGroup.ReadColumn<DateTime?>(2);
+        var snapshotDates = rowGroup.ReadColumn<DateTime>(3);
+#endif
 
-        Assert.Equal([1, 2, 3], payload[0]);
-        Assert.Equal([4, 5], payload[1]);
+        Assert.Equal(new byte[] { 1, 2, 3 }, payload[0]);
+        Assert.Equal(new byte[] { 4, 5 }, payload[1]);
         Assert.Equal(Guid.Parse("11111111-1111-1111-1111-111111111111"), traceIds[0]);
         Assert.Equal(Guid.Parse("22222222-2222-2222-2222-222222222222"), traceIds[1]);
+#if NET8_0_OR_GREATER
         Assert.Equal(new DateOnly(2024, 8, 1), businessDates[0]);
         Assert.Null(businessDates[1]);
         Assert.Equal(new DateOnly(2024, 8, 3), businessDates[2]);
         Assert.Equal(new DateOnly(2024, 9, 1), snapshotDates[0]);
         Assert.Equal(new DateOnly(2024, 9, 2), snapshotDates[1]);
         Assert.Equal(new DateOnly(2024, 9, 3), snapshotDates[2]);
+#else
+        Assert.Equal(new DateTime(2024, 8, 1), businessDates[0]);
+        Assert.Null(businessDates[1]);
+        Assert.Equal(new DateTime(2024, 8, 3), businessDates[2]);
+        Assert.Equal(new DateTime(2024, 9, 1), snapshotDates[0]);
+        Assert.Equal(new DateTime(2024, 9, 2), snapshotDates[1]);
+        Assert.Equal(new DateTime(2024, 9, 3), snapshotDates[2]);
+#endif
     }
 
     [Fact]
@@ -210,7 +224,7 @@ public sealed class ParquetReaderTests
         Assert.Equal(rowCount, names.Length);
         Assert.Null(names[0]);
         Assert.Equal("row-1", names[1]);
-        Assert.Equal("row-999999", names[^1]);
+        Assert.Equal("row-999999", names[names.Length - 1]);
     }
 
     [Fact(Skip = "Profiling-only test; run manually when isolating temporal and decimal CLR materialization hot paths.")]
@@ -371,8 +385,8 @@ public sealed class ParquetReaderTests
         {
             new(typeof(byte[]), "payload", LogicalType.None()),
             new(typeof(Guid), "traceId", LogicalType.Uuid(), 16),
-            new(typeof(DateOnly?), "businessDate", LogicalType.Date()),
-            new(typeof(DateOnly), "snapshotDate", LogicalType.Date()),
+            new ParquetSharp.Column<int?>("businessDate", LogicalType.Date()),
+            new ParquetSharp.Column<int>("snapshotDate", LogicalType.Date()),
         };
 
         using (var writer = new ParquetSharpFileWriter(destination, columns, leaveOpen: true))
@@ -382,9 +396,9 @@ public sealed class ParquetReaderTests
                 rowGroup.NextColumn().LogicalWriter<byte[]>().WriteBatch(
                     new byte[][]
                     {
-                        [1, 2, 3],
-                        [4, 5],
-                        [6],
+                        new byte[] { 1, 2, 3 },
+                        new byte[] { 4, 5 },
+                        new byte[] { 6 },
                     });
 
                 rowGroup.NextColumn().LogicalWriter<Guid>().WriteBatch(
@@ -395,20 +409,20 @@ public sealed class ParquetReaderTests
                         Guid.Parse("33333333-3333-3333-3333-333333333333"),
                     });
 
-                rowGroup.NextColumn().LogicalWriter<DateOnly?>().WriteBatch(
-                    new DateOnly?[]
+                rowGroup.NextColumn().LogicalWriter<int?>().WriteBatch(
+                    new int?[]
                     {
-                        new DateOnly(2024, 8, 1),
+                        DaysSinceUnixEpoch(new DateTime(2024, 8, 1)),
                         null,
-                        new DateOnly(2024, 8, 3),
+                        DaysSinceUnixEpoch(new DateTime(2024, 8, 3)),
                     });
 
-                rowGroup.NextColumn().LogicalWriter<DateOnly>().WriteBatch(
-                    new DateOnly[]
+                rowGroup.NextColumn().LogicalWriter<int>().WriteBatch(
+                    new int[]
                     {
-                        new DateOnly(2024, 9, 1),
-                        new DateOnly(2024, 9, 2),
-                        new DateOnly(2024, 9, 3),
+                        DaysSinceUnixEpoch(new DateTime(2024, 9, 1)),
+                        DaysSinceUnixEpoch(new DateTime(2024, 9, 2)),
+                        DaysSinceUnixEpoch(new DateTime(2024, 9, 3)),
                     });
             }
 
@@ -417,6 +431,11 @@ public sealed class ParquetReaderTests
 
         destination.Position = 0;
         return destination;
+    }
+
+    private static int DaysSinceUnixEpoch(DateTime value)
+    {
+        return (value.Date - new DateTime(1970, 1, 1)).Days;
     }
 
     private sealed class NonSeekableReadStream : MemoryStream

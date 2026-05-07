@@ -8,13 +8,13 @@ internal static class ParquetSchemaImporter
 {
     public static ParquetSchema Import(ArrowSchema schema)
     {
-        ArgumentNullException.ThrowIfNull(schema);
+        TargetFrameworkCompat.ThrowIfNull(schema);
         return new ParquetSchema(schema.FieldsList.Select(ImportColumn));
     }
 
     private static ParquetColumn ImportColumn(Field field)
     {
-        foreach (ParquetColumnType columnType in Enum.GetValues<ParquetColumnType>())
+        foreach (ParquetColumnType columnType in (ParquetColumnType[])Enum.GetValues(typeof(ParquetColumnType)))
         {
             if (columnType is ParquetColumnType.Timestamp or ParquetColumnType.Decimal128)
             {

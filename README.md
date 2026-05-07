@@ -258,7 +258,11 @@ cargo test
 
 ## NuGet Packaging
 
-The project produces a strong-name signed NuGet package with Source Link support and bundled native libraries.
+The project produces a strong-name signed NuGet package with Source Link support, `net8.0` and `netstandard2.0` assemblies, and bundled native libraries.
+
+`netstandard2.0` consumers use `DateTime` / `DateTime?` arrays for `Date32` and `Date64` columns because `DateOnly` is not available on .NET Standard 2.0. `net8.0` consumers continue to use `DateOnly` / `DateOnly?` for date columns.
+
+The test project also targets `net472` to verify that .NET Framework consumers can run through the `netstandard2.0` asset.
 
 ### Windows-only pack
 

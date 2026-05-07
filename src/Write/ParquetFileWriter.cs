@@ -22,8 +22,8 @@ public sealed class ParquetFileWriter : IDisposable
     /// <param name="options">Optional parquet write settings.</param>
     public ParquetFileWriter(Stream output, ParquetSchema schema, ParquetWriteOptions? options = null)
     {
-        ArgumentNullException.ThrowIfNull(output);
-        ArgumentNullException.ThrowIfNull(schema);
+        TargetFrameworkCompat.ThrowIfNull(output);
+        TargetFrameworkCompat.ThrowIfNull(schema);
 
         var effectiveOptions = ParquetWriteOptionsDefaults.ApplyForBatchWriter(options ?? new ParquetWriteOptions());
         _batchBuilder = new ArrowRecordBatchBuilder(schema, effectiveOptions);
@@ -37,7 +37,7 @@ public sealed class ParquetFileWriter : IDisposable
     /// <param name="columns">The batch columns in schema order.</param>
     public void WriteBatch(params System.Array[] columns)
     {
-        ArgumentNullException.ThrowIfNull(columns);
+        TargetFrameworkCompat.ThrowIfNull(columns);
         WriteBatch((IReadOnlyList<System.Array>)columns);
     }
 
@@ -47,7 +47,7 @@ public sealed class ParquetFileWriter : IDisposable
     /// <param name="columns">The batch columns in schema order.</param>
     public void WriteBatch(IReadOnlyList<System.Array> columns)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        TargetFrameworkCompat.ThrowIfDisposed(_disposed, this);
         ThrowIfFinished();
 
         var recordBatch = _batchBuilder.Build(columns);
@@ -60,7 +60,7 @@ public sealed class ParquetFileWriter : IDisposable
     /// <param name="columns">The batch columns in schema order.</param>
     public void WriteBatch(params IArrowArray[] columns)
     {
-        ArgumentNullException.ThrowIfNull(columns);
+        TargetFrameworkCompat.ThrowIfNull(columns);
         WriteBatch((IReadOnlyList<IArrowArray>)columns);
     }
 
@@ -70,7 +70,7 @@ public sealed class ParquetFileWriter : IDisposable
     /// <param name="columns">The batch columns in schema order.</param>
     public void WriteBatch(IReadOnlyList<IArrowArray> columns)
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        TargetFrameworkCompat.ThrowIfDisposed(_disposed, this);
         ThrowIfFinished();
 
         var recordBatch = _batchBuilder.Build(columns);
@@ -82,7 +82,7 @@ public sealed class ParquetFileWriter : IDisposable
     /// </summary>
     public void Finish()
     {
-        ObjectDisposedException.ThrowIf(_disposed, this);
+        TargetFrameworkCompat.ThrowIfDisposed(_disposed, this);
         ThrowIfFinished();
 
         NativeParquetBridge.FinishFileWriter(_nativeWriter);

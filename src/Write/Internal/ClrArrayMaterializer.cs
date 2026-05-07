@@ -46,10 +46,18 @@ internal sealed class ClrArrayMaterializer
             string?[] values => BuildString(values),
             Guid[] values => BuildGuid(values),
             byte[][] values => BuildBinary(values),
+#if NET8_0_OR_GREATER
             DateOnly[] values when context.ArrowType is Date32Type => BuildDate32(values),
             DateOnly[] values when context.ArrowType is Date64Type => BuildDate64(values),
             DateOnly?[] values when context.ArrowType is Date32Type => BuildDate32(values),
             DateOnly?[] values when context.ArrowType is Date64Type => BuildDate64(values),
+#endif
+            // DateTime date inputs are required for netstandard2.0 and also accepted
+            // on net8.0 for callers that prefer a cross-target source shape.
+            DateTime[] values when context.ArrowType is Date32Type => BuildDate32(values),
+            DateTime[] values when context.ArrowType is Date64Type => BuildDate64(values),
+            DateTime?[] values when context.ArrowType is Date32Type => BuildDate32(values),
+            DateTime?[] values when context.ArrowType is Date64Type => BuildDate64(values),
             DateTime[] values => BuildTimestamp(values, (TimestampType)context.ArrowType),
             DateTime?[] values => BuildTimestamp(values, (TimestampType)context.ArrowType),
             decimal[] values => BuildDecimal(values, (Decimal128Type)context.ArrowType),
@@ -159,6 +167,7 @@ internal sealed class ClrArrayMaterializer
     private DoubleArray BuildDouble(double?[] values)
         => BuildWithBuilder(values, static () => new DoubleArray.Builder(), static (builder, length) => builder.Reserve(length), static (builder, value) => builder.Append(value), static builder => builder.Build(s_allocator));
 
+#if NET8_0_OR_GREATER
     private Date32Array BuildDate32(DateOnly[] values)
         => BuildWithBuilder(
             values,
@@ -203,6 +212,59 @@ internal sealed class ClrArrayMaterializer
                 if (value.HasValue)
                 {
                     builder.Append(value.Value.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc));
+                }
+                else
+                {
+                    builder.AppendNull();
+                }
+            },
+            static builder => builder.Build(s_allocator));
+#endif
+
+    private Date32Array BuildDate32(DateTime[] values)
+        => BuildWithBuilder(
+            values,
+            static () => new Date32Array.Builder(),
+            static (builder, length) => builder.Reserve(length),
+            static (builder, value) => builder.Append(value.Date),
+            static builder => builder.Build(s_allocator));
+
+    private Date32Array BuildDate32(DateTime?[] values)
+        => BuildWithBuilder(
+            values,
+            static () => new Date32Array.Builder(),
+            static (builder, length) => builder.Reserve(length),
+            static (builder, value) =>
+            {
+                if (value.HasValue)
+                {
+                    builder.Append(value.Value.Date);
+                }
+                else
+                {
+                    builder.AppendNull();
+                }
+            },
+            static builder => builder.Build(s_allocator));
+
+    private Date64Array BuildDate64(DateTime[] values)
+        => BuildWithBuilder(
+            values,
+            static () => new Date64Array.Builder(),
+            static (builder, length) => builder.Reserve(length),
+            static (builder, value) => builder.Append(value.Date),
+            static builder => builder.Build(s_allocator));
+
+    private Date64Array BuildDate64(DateTime?[] values)
+        => BuildWithBuilder(
+            values,
+            static () => new Date64Array.Builder(),
+            static (builder, length) => builder.Reserve(length),
+            static (builder, value) =>
+            {
+                if (value.HasValue)
+                {
+                    builder.Append(value.Value.Date);
                 }
                 else
                 {

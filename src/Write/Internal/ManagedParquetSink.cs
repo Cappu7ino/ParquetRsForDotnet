@@ -1,6 +1,5 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using System.Text;
 using ParquetRsForDotnet.Interop;
 
 namespace ParquetRsForDotnet.Internal;
@@ -12,6 +11,15 @@ internal sealed unsafe class ManagedParquetSink : IDisposable
 {
     private readonly GCHandle _handle;
     private readonly Stream _destination;
+#if !NET8_0_OR_GREATER
+    // Keep delegate instances rooted for as long as the native sink can call them.
+    // Marshal.GetFunctionPointerForDelegate does not keep the delegate alive.
+    private readonly WriteCallbackDelegate _writeCallback;
+    private readonly SimpleCallbackDelegate _flushCallback;
+    private readonly SimpleCallbackDelegate _closeCallback;
+    private readonly SimpleCallbackDelegate _abortCallback;
+    private readonly GetLastErrorCallbackDelegate _getLastErrorCallback;
+#endif
     private bool _disposed;
     private string? _lastError;
     private IntPtr _lastErrorPtr;
@@ -28,6 +36,7 @@ internal sealed unsafe class ManagedParquetSink : IDisposable
     {
         _destination = destination;
         _handle = GCHandle.Alloc(this);
+#if NET8_0_OR_GREATER
         NativeSink = new ParquetOutputSink
         {
             Write = &WriteCallback,
@@ -37,6 +46,22 @@ internal sealed unsafe class ManagedParquetSink : IDisposable
             GetLastError = &GetLastErrorCallback,
             Context = GCHandle.ToIntPtr(_handle),
         };
+#else
+        _writeCallback = WriteCallback;
+        _flushCallback = FlushCallback;
+        _closeCallback = CloseCallback;
+        _abortCallback = AbortCallback;
+        _getLastErrorCallback = GetLastErrorCallback;
+        NativeSink = new ParquetOutputSink
+        {
+            Write = Marshal.GetFunctionPointerForDelegate(_writeCallback),
+            Flush = Marshal.GetFunctionPointerForDelegate(_flushCallback),
+            Close = Marshal.GetFunctionPointerForDelegate(_closeCallback),
+            Abort = Marshal.GetFunctionPointerForDelegate(_abortCallback),
+            GetLastError = Marshal.GetFunctionPointerForDelegate(_getLastErrorCallback),
+            Context = GCHandle.ToIntPtr(_handle),
+        };
+#endif
     }
 
     public ParquetOutputSink NativeSink { get; }
@@ -86,13 +111,29 @@ internal sealed unsafe class ManagedParquetSink : IDisposable
     /// <param name="length">The number of bytes to write.</param>
     /// <param name="written">The number of bytes successfully written.</param>
     /// <returns>A native error code.</returns>
+#if NET8_0_OR_GREATER
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static int WriteCallback(IntPtr context, byte* data, nuint length, nuint* written)
+#else
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate int WriteCallbackDelegate(IntPtr context, byte* data, UIntPtr length, UIntPtr* written);
+
+    private static int WriteCallback(IntPtr context, byte* data, UIntPtr length, UIntPtr* written)
+#endif
     {
         var sink = FromContext(context);
         try
         {
+#if NET8_0_OR_GREATER
             sink._destination.Write(new ReadOnlySpan<byte>(data, checked((int)length)));
+#else
+            // Stream span overloads are unavailable on netstandard2.0, so copy the
+            // native buffer through a managed byte[] before writing to the stream.
+            var byteCount = checked((int)(ulong)length);
+            byte[] buffer = new byte[byteCount];
+            Marshal.Copy((IntPtr)data, buffer, 0, buffer.Length);
+            sink._destination.Write(buffer, 0, buffer.Length);
+#endif
             if (written != null)
             {
                 *written = length;
@@ -112,7 +153,13 @@ internal sealed unsafe class ManagedParquetSink : IDisposable
     /// </summary>
     /// <param name="context">The unmanaged callback context.</param>
     /// <returns>A native error code.</returns>
+#if NET8_0_OR_GREATER
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+#else
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate int SimpleCallbackDelegate(IntPtr context);
+
+#endif
     private static int FlushCallback(IntPtr context)
     {
         var sink = FromContext(context);
@@ -133,7 +180,9 @@ internal sealed unsafe class ManagedParquetSink : IDisposable
     /// </summary>
     /// <param name="context">The unmanaged callback context.</param>
     /// <returns>A native error code.</returns>
+#if NET8_0_OR_GREATER
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+#endif
     private static int CloseCallback(IntPtr context)
     {
         var sink = FromContext(context);
@@ -154,7 +203,9 @@ internal sealed unsafe class ManagedParquetSink : IDisposable
     /// </summary>
     /// <param name="context">The unmanaged callback context.</param>
     /// <returns>A native error code.</returns>
+#if NET8_0_OR_GREATER
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+#endif
     private static int AbortCallback(IntPtr context)
     {
         var sink = FromContext(context);
@@ -167,7 +218,13 @@ internal sealed unsafe class ManagedParquetSink : IDisposable
     /// </summary>
     /// <param name="context">The unmanaged callback context.</param>
     /// <returns>The pointer to the unmanaged UTF-8 error string.</returns>
+#if NET8_0_OR_GREATER
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+#else
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate byte* GetLastErrorCallbackDelegate(IntPtr context);
+
+#endif
     private static byte* GetLastErrorCallback(IntPtr context)
     {
         var sink = FromContext(context);
@@ -181,7 +238,7 @@ internal sealed unsafe class ManagedParquetSink : IDisposable
             Marshal.FreeCoTaskMem(sink._lastErrorPtr);
         }
 
-        sink._lastErrorPtr = Marshal.StringToCoTaskMemUTF8(sink._lastError);
+        sink._lastErrorPtr = TargetFrameworkCompat.StringToCoTaskMemUtf8(sink._lastError);
         return (byte*)sink._lastErrorPtr;
     }
 
