@@ -6,16 +6,6 @@ namespace ParquetRsForDotnet;
 public sealed class ParquetWriteOptions
 {
     /// <summary>
-    /// Gets the target number of rows to accumulate per batch when the source is row-oriented.
-    /// </summary>
-    public int TargetBatchRows { get; init; } = 4096;
-
-    /// <summary>
-    /// Gets the optional target size in bytes for each managed batch when the source is row-oriented.
-    /// </summary>
-    public long? TargetBatchBytes { get; init; }
-
-    /// <summary>
     /// Gets the optional maximum number of rows per parquet row group.
     /// </summary>
     public int? MaxRowGroupRows { get; init; }

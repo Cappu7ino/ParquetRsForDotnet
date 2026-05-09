@@ -28,7 +28,12 @@ Use this file as the first-stop guide for coding agents.
 - `src/Errors/` - public/native-facing error types
 - `native/` - Rust parquet implementation
 - `tests/` - xUnit end-to-end tests
+- `tests/IntegrationScenarios/` - executable documentation for canonical consuming workflows
 - `benchmarks/` - performance comparisons, mainly against ParquetSharp
+- `examples/` - compile-checked consuming-project examples
+- `api/` - public API semantic inventory and machine-readable semantic index
+- `docs/ai/` - AI-optimized integration guidance
+- `docs/architecture/`, `docs/how-to/`, `docs/adr/` - focused repo-only architecture and workflow docs
 - `docs/read-write-architecture.md` - contributor architecture reference
 
 ## Coding style
@@ -120,6 +125,9 @@ dotnet pack src/ParquetRsForDotnet.csproj -c Release -p:CrossBuildLinux=true
 ## Files worth reading before major changes
 
 - `README.md`
+- `docs/ai/bootstrap.md`
+- `api/public-api.md`
+- `api/semantic-index.json`
 - `docs/read-write-architecture.md`
 - `src/Interop/NativeParquetBridge.cs`
 - `native/src/lib.rs`

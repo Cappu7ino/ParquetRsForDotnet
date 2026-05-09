@@ -1,0 +1,70 @@
+{
+  "package": "ParquetRsForDotnet",
+  "namespace": "ParquetRsForDotnet",
+  "targetFrameworks": ["net8.0", "netstandard2.0"],
+  "nativeRuntimeAssets": ["win-x64", "linux-x64"],
+  "concepts": [
+    {
+      "name": "explicit-schema batch write",
+      "keywords": ["ParquetFileWriter", "WriteBatch", "ParquetSchema", "column order", "batch write"],
+      "limitations": ["no schema inference", "columns must match schema order", "all columns must have equal length"]
+    },
+    {
+      "name": "row-group column read",
+      "keywords": ["ParquetFileReader", "ParquetRowGroupReader", "ReadColumn", "projection", "row group"],
+      "limitations": ["input stream must be seekable", "read by row group then column", "not row-object oriented"]
+    },
+    {
+      "name": "target framework date behavior",
+      "keywords": ["Date32", "Date64", "DateOnly", "DateTime", "netstandard2.0", "net472"],
+      "limitations": ["DateOnly is unavailable on netstandard2.0", "netstandard2.0 date columns materialize as DateTime"]
+    }
+  ],
+  "apis": [
+    {
+      "type": "ParquetFileWriter",
+      "kind": "class",
+      "capabilities": ["write parquet", "write CLR column arrays", "write Arrow arrays", "configure compression", "configure row groups"],
+      "intendedUsage": "Create a new parquet file from explicit schema-ordered column batches.",
+      "lifecycle": ["construct", "write batches", "finish", "dispose"],
+      "threading": "No thread-safety guarantee; coordinate access externally.",
+      "performanceNotes": ["batch column arrays instead of row-at-a-time writes", "use MaxRowGroupRows or MaxRowGroupBytes for row-group sizing", "NativeWriteBatchSize tunes parquet-rs encoder chunking only"],
+      "limitations": ["no append-to-existing-file API", "no schema inference", "no async API"],
+      "relatedTypes": ["ParquetSchema", "ParquetColumn", "ParquetWriteOptions", "Apache.Arrow.IArrowArray"]
+    },
+    {
+      "type": "ParquetFileReader",
+      "kind": "class",
+      "capabilities": ["read parquet schema", "inspect row group count", "open row group readers"],
+      "intendedUsage": "Open a seekable parquet stream and create row-group scoped readers.",
+      "lifecycle": ["construct with seekable stream", "open row groups", "dispose"],
+      "threading": "No thread-safety guarantee; coordinate access externally.",
+      "limitations": ["input stream must be seekable", "no async API"],
+      "relatedTypes": ["ParquetRowGroupReader", "ParquetSchema"]
+    },
+    {
+      "type": "ParquetRowGroupReader",
+      "kind": "class",
+      "capabilities": ["read Arrow column", "read CLR column", "column projection"],
+      "intendedUsage": "Read selected columns from one parquet row group.",
+      "lifecycle": ["created by ParquetFileReader", "read columns", "dispose"],
+      "threading": "No thread-safety guarantee; coordinate access externally.",
+      "limitations": ["ReadColumn<T> requires exact CLR type", "decimal reads use SqlDecimal", "date reads depend on target framework"],
+      "relatedTypes": ["Apache.Arrow.IArrowArray", "System.Data.SqlTypes.SqlDecimal"]
+    },
+    {
+      "type": "ParquetWriteOptions",
+      "kind": "class",
+      "capabilities": ["compression", "dictionary encoding", "statistics", "row-group sizing", "native encoder tuning", "file metadata"],
+      "intendedUsage": "Configure parquet writer behavior for a file creation operation.",
+      "limitations": ["NativeWriteBatchSize does not split managed WriteBatch calls", "callers control managed batch sizes"]
+    }
+  ],
+  "typeMappings": {
+    "Decimal128": { "writeClr": "decimal or decimal?", "readClr": "SqlDecimal or SqlDecimal?" },
+    "Date32": { "net8ReadClr": "DateOnly or DateOnly?", "netstandard20ReadClr": "DateTime or DateTime?" },
+    "Date64": { "net8ReadClr": "DateOnly or DateOnly?", "netstandard20ReadClr": "DateTime or DateTime?" },
+    "Timestamp": { "writeClr": "DateTime or DateTime?", "readClr": "DateTime or DateTime?" },
+    "Guid": { "arrowPhysical": "FixedSizeBinary(16)", "readClr": "Guid" }
+  }
+}

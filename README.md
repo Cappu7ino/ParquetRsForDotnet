@@ -106,9 +106,6 @@ Supporting public schema types:
 ```csharp
 public sealed class ParquetWriteOptions
 {
-    public int TargetBatchRows { get; init; } = 4096;
-    public long? TargetBatchBytes { get; init; }
-
     public int? MaxRowGroupRows { get; init; }
     public long? MaxRowGroupBytes { get; init; }
 
@@ -126,7 +123,7 @@ public sealed class ParquetWriteOptions
 Option intent:
 
 - `MaxRowGroupRows` / `MaxRowGroupBytes`
-  - affect native parquet row-group buffering
+  - control parquet row-group boundaries and native row-group buffering
 - `Compression`
   - selects the parquet compression codec
 - `EnableDictionaryEncoding`
@@ -136,7 +133,7 @@ Option intent:
 - `ArrowMaterializationMode`
   - tuning knob for CLR array-backed batch materialization
 - `NativeWriteBatchSize`
-  - optionally overrides parquet-rs internal column write batch size
+  - advanced knob that optionally overrides parquet-rs internal encoder write batch size; it does not split managed `WriteBatch(...)` calls or define row-group boundaries
 - `CreatedBy`, `FileMetadata`
   - flow into native parquet writer properties
 
@@ -292,6 +289,8 @@ dotnet pack src/ParquetRsForDotnet.csproj -c Release -p:CrossBuildLinux=true
 
 The resulting `.nupkg` will contain native libraries under `runtimes/win-x64/native/` and `runtimes/linux-x64/native/`.
 
+For package content verification and native asset troubleshooting, see `docs/how-to/package-and-native-assets.md`.
+
 ## Benchmarks
 
 The repository includes a BenchmarkDotNet project under `benchmarks/` focused on true-parity multi-batch writer comparisons against ParquetSharp.
@@ -333,6 +332,8 @@ Current coverage includes:
 ## Contributor Notes
 
 For implementation details, ownership rules, and extension points, see `docs/read-write-architecture.md`.
+
+For AI-assisted consuming-repo integration, start with `docs/ai/bootstrap.md` and `api/public-api.md`. These stable public-contract artifacts are also packed into the NuGet package.
 
 ## Notes
 

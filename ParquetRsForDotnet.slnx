@@ -8,5 +8,10 @@
   <Folder Name="/benchmarks/">
     <Project Path="benchmarks/ParquetRsForDotnet.Benchmarks.csproj" />
   </Folder>
+  <Folder Name="/examples/">
+    <Project Path="examples/ReadSelectedColumns/ReadSelectedColumns.csproj" />
+    <Project Path="examples/WriteArrowArrays/WriteArrowArrays.csproj" />
+    <Project Path="examples/WriteClrBatches/WriteClrBatches.csproj" />
+  </Folder>
   <Folder Name="/native/" />
 </Solution>

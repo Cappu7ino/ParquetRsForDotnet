@@ -13,8 +13,6 @@ internal static class ParquetWriteOptionsDefaults
 
         return new ParquetWriteOptions
         {
-            TargetBatchRows = options.TargetBatchRows,
-            TargetBatchBytes = options.TargetBatchBytes,
             MaxRowGroupRows = options.MaxRowGroupRows,
             MaxRowGroupBytes = options.MaxRowGroupBytes,
             Compression = options.Compression,

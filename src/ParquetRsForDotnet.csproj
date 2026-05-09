@@ -63,6 +63,9 @@
   <!-- Pack README into the NuGet package root -->
   <ItemGroup>
     <None Include="..\README.md" Pack="true" PackagePath="\" />
+    <None Include="..\docs\ai\bootstrap.md" Pack="true" PackagePath="docs\ai" />
+    <None Include="..\api\public-api.md" Pack="true" PackagePath="api" />
+    <None Include="..\api\semantic-index.json" Pack="true" PackagePath="api" />
   </ItemGroup>
 
   <!-- Pack native libraries into runtimes/<rid>/native/ for NuGet consumers -->
