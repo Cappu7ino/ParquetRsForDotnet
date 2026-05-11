@@ -33,7 +33,7 @@
       "intendedUsage": "Create a new parquet file from explicit schema-ordered column batches.",
       "lifecycle": ["construct", "write batches", "finish", "dispose"],
       "threading": "No thread-safety guarantee; coordinate access externally.",
-      "performanceNotes": ["batch column arrays instead of row-at-a-time writes", "use MaxRowGroupRows or MaxRowGroupBytes for row-group sizing", "NativeWriteBatchSize tunes parquet-rs encoder chunking only"],
+      "performanceNotes": ["batch column arrays instead of row-at-a-time writes", "use MaxRowGroupRows or MaxRowGroupBytes for row-group sizing", "NativeWriteBatchSize tunes parquet-rs encoder chunking only", "use page-size and adaptive native writer memory options for lower peak native buffers"],
       "limitations": ["no append-to-existing-file API", "no schema inference", "no async API"],
       "relatedTypes": ["ParquetSchema", "ParquetColumn", "ParquetWriteOptions", "Apache.Arrow.IArrowArray"]
     },
@@ -67,9 +67,9 @@
     {
       "type": "ParquetWriteOptions",
       "kind": "class",
-      "capabilities": ["compression", "dictionary encoding", "statistics", "row-group sizing", "native encoder tuning", "file metadata"],
+      "capabilities": ["compression", "dictionary encoding", "statistics", "row-group sizing", "page sizing", "native encoder tuning", "adaptive native writer flushing", "file metadata"],
       "intendedUsage": "Configure parquet writer behavior for a file creation operation.",
-      "limitations": ["NativeWriteBatchSize does not split managed WriteBatch calls", "callers control managed batch sizes"]
+      "limitations": ["NativeWriteBatchSize does not split managed WriteBatch calls", "MaxNativeWriterMemoryBytes is checked after each managed WriteBatch and is not a hard process memory cap", "smaller page and row-group settings can increase file size and metadata overhead", "callers control managed batch sizes"]
     }
   ],
   "typeMappings": {

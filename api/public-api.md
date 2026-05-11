@@ -88,6 +88,10 @@ This file describes stable public-contract behavior for agents and SDK integrato
 - Active options:
   - `MaxRowGroupRows`
   - `MaxRowGroupBytes`
+  - `DataPageRowCountLimit`
+  - `DataPageSizeLimitBytes`
+  - `DictionaryPageSizeLimitBytes`
+  - `MaxNativeWriterMemoryBytes`
   - `Compression`
   - `EnableDictionaryEncoding`
   - `StatisticsLevel`
@@ -97,6 +101,8 @@ This file describes stable public-contract behavior for agents and SDK integrato
   - `FileMetadata`
 - Pitfalls:
   - `NativeWriteBatchSize` is an advanced native encoder knob, not a managed batch splitter
+  - `MaxNativeWriterMemoryBytes` is an estimated native writer threshold checked after each managed batch, not a hard process memory limit
+  - smaller page and row-group settings may increase metadata overhead and reduce compression efficiency
   - callers own public `WriteBatch(...)` sizes
 
 ## Type Mapping

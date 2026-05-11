@@ -145,6 +145,26 @@ internal struct ParquetWriteOptionsNative
     public long MaxRowGroupBytes;
 
     /// <summary>
+    /// Gets or sets the maximum data page row count, or -1 when unset.
+    /// </summary>
+    public int DataPageRowCountLimit;
+
+    /// <summary>
+    /// Gets or sets the maximum data page size in bytes, or -1 when unset.
+    /// </summary>
+    public int DataPageSizeLimitBytes;
+
+    /// <summary>
+    /// Gets or sets the maximum dictionary page size in bytes, or -1 when unset.
+    /// </summary>
+    public int DictionaryPageSizeLimitBytes;
+
+    /// <summary>
+    /// Gets or sets the native writer memory threshold in bytes, or -1 when unset.
+    /// </summary>
+    public long MaxNativeWriterMemoryBytes;
+
+    /// <summary>
     /// Gets or sets the optional created-by string pointer.
     /// </summary>
     public IntPtr CreatedBy;

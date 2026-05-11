@@ -598,6 +598,10 @@ internal static unsafe class NativeParquetBridge
                 NativeWriteBatchSize = options.NativeWriteBatchSize ?? -1,
                 MaxRowGroupRows = options.MaxRowGroupRows ?? -1,
                 MaxRowGroupBytes = options.MaxRowGroupBytes ?? -1,
+                DataPageRowCountLimit = options.DataPageRowCountLimit ?? -1,
+                DataPageSizeLimitBytes = options.DataPageSizeLimitBytes ?? -1,
+                DictionaryPageSizeLimitBytes = options.DictionaryPageSizeLimitBytes ?? -1,
+                MaxNativeWriterMemoryBytes = options.MaxNativeWriterMemoryBytes ?? -1,
             });
 
             scope.Options.CreatedBy = scope.AllocUtf8(options.CreatedBy);
