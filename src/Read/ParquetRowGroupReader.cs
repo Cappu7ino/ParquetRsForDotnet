@@ -52,6 +52,10 @@ public sealed class ParquetRowGroupReader : IDisposable
         return ReadColumnBatches(_owner.GetColumnIndex(columnName));
     }
 
+    /// <summary>
+    /// Reads Arrow array batches for a row range within this row group.
+    /// The row range limits which input rows are read; read batch size still controls returned array chunking.
+    /// </summary>
     public IEnumerable<IArrowArray> ReadColumnBatches(int columnIndex, long rowOffset, long rowCount)
     {
         TargetFrameworkCompat.ThrowIfDisposed(_disposed, this);
@@ -65,6 +69,10 @@ public sealed class ParquetRowGroupReader : IDisposable
         return ReadColumnBatchesCore(field, GetReadBatchSize(rowCount), rowOffset, rowCount);
     }
 
+    /// <summary>
+    /// Reads Arrow array batches for a row range within this row group.
+    /// The row range limits which input rows are read; read batch size still controls returned array chunking.
+    /// </summary>
     public IEnumerable<IArrowArray> ReadColumnBatches(string columnName, long rowOffset, long rowCount)
     {
         TargetFrameworkCompat.ThrowIfDisposed(_disposed, this);
@@ -104,6 +112,10 @@ public sealed class ParquetRowGroupReader : IDisposable
         return ReadColumnBatches<T>(_owner.GetColumnIndex(columnName));
     }
 
+    /// <summary>
+    /// Reads CLR array batches for a row range within this row group.
+    /// The row range limits which input rows are read; read batch size still controls returned array chunking.
+    /// </summary>
     public IEnumerable<T[]> ReadColumnBatches<T>(int columnIndex, long rowOffset, long rowCount)
     {
         TargetFrameworkCompat.ThrowIfDisposed(_disposed, this);
@@ -119,6 +131,10 @@ public sealed class ParquetRowGroupReader : IDisposable
         return ReadColumnBatchesCore<T>(field, GetReadBatchSize(rowCount), rowOffset, rowCount);
     }
 
+    /// <summary>
+    /// Reads CLR array batches for a row range within this row group.
+    /// The row range limits which input rows are read; read batch size still controls returned array chunking.
+    /// </summary>
     public IEnumerable<T[]> ReadColumnBatches<T>(string columnName, long rowOffset, long rowCount)
     {
         TargetFrameworkCompat.ThrowIfDisposed(_disposed, this);

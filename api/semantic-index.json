@@ -54,7 +54,7 @@
       "intendedUsage": "Read selected columns from one parquet row group.",
       "lifecycle": ["created by ParquetFileReader", "read columns", "dispose"],
       "threading": "No thread-safety guarantee; coordinate access externally.",
-      "limitations": ["ReadColumn<T> requires exact CLR type", "ReadColumn returns the full selected row-group column", "ReadColumnBatches is required for lower peak memory", "row-range reads are scoped to the opened row group", "decimal reads use SqlDecimal", "date reads depend on target framework"],
+      "limitations": ["ReadColumn<T> requires exact CLR type", "ReadColumn returns the full selected row-group column", "ReadColumnBatches is required for lower peak memory", "BatchSize chunks returned arrays while row-range overloads limit selected input rows", "row-range reads are scoped to the opened row group", "decimal reads use SqlDecimal", "date reads depend on target framework"],
       "relatedTypes": ["Apache.Arrow.IArrowArray", "System.Data.SqlTypes.SqlDecimal"]
     },
     {

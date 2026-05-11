@@ -1100,6 +1100,8 @@ unsafe fn build_projected_column_reader(
             ));
         }
 
+        // Row selection limits the input rows parquet-rs reads; batch size still
+        // controls how the selected rows are chunked into returned Arrow arrays.
         let mut selectors = Vec::with_capacity(3);
         if row_offset > 0 {
             selectors.push(RowSelector::skip(row_offset));

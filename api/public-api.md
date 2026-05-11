@@ -63,6 +63,7 @@ This file describes stable public-contract behavior for agents and SDK integrato
   - `ReadColumn<T>` validates exact CLR type
   - `ReadColumn(...)` and `ReadColumn<T>(...)` return the entire selected row-group column
   - use `ReadColumnBatches(...)`, `ReadColumnBatches(..., rowOffset, rowCount)`, or CLR equivalents for lower peak memory
+  - `BatchSize` chunks returned arrays; row-range overloads additionally limit which input rows are read
   - row-range batched reads are scoped to the opened row group and validate that the range is within `RowCount`
   - decimal CLR reads use `SqlDecimal`, not `decimal`
   - date CLR reads differ by target framework
