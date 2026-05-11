@@ -1,35 +1,12 @@
 {
     "servers": {
-        "ado-msdata": {
-            "type": "stdio",
-            "command": "npx",
-            "args": [
-                "-y",
-                "@azure-devops/mcp@latest",
-                "msdata"
-            ]
-        },
-        "powerbi-modeling-mcp": {
-            "type": "stdio",
-            "command": "C:\\MCPServers\\PowerBIModelingMCP\\extension\\server\\powerbi-modeling-mcp.exe",
-            "args": [
-                "--start"
-            ],
-            "env": {}
+        "github": {
+            "type": "http",
+            "url": "https://api.githubcopilot.com/mcp/"
         },
         "microsoft-docs-mcp": {
             "type": "http",
             "url": "https://learn.microsoft.com/api/mcp"
-        },
-        "azure-mcp": {
-            "type": "local",
-            "command": "npx",
-            "args": [
-                "-y",
-                "@azure/mcp@latest",
-                "server",
-                "start"
-            ]
         }
     },
     "inputs": []

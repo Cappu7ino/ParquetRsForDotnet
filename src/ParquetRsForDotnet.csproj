@@ -18,10 +18,14 @@
   <PropertyGroup>
     <PackageId>ParquetRsForDotnet</PackageId>
     <Version>0.1.1</Version>
-    <Authors>Azure Data Movement</Authors>
+    <Authors>Cappu7ino</Authors>
     <Description>Arrow-native Parquet reader and writer for .NET, powered by the Rust parquet crate via Arrow C Data interop.</Description>
     <PackageTags>parquet;arrow;rust;native;interop</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/Cappu7ino/ParquetRsForDotnet</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/Cappu7ino/ParquetRsForDotnet</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
   </PropertyGroup>
 
   <!-- Source Link and deterministic builds -->
@@ -53,7 +57,7 @@
 
   <ItemGroup>
     <PackageReference Include="Apache.Arrow" Version="22.1.0" />
-    <PackageReference Include="Microsoft.SourceLink.AzureRepos.Git" Version="8.0.0" PrivateAssets="All" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="All" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">

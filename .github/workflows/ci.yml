@@ -1,0 +1,86 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  native-rust:
+    name: Native Rust tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Test native crate
+        working-directory: native
+        run: cargo test
+
+  managed-tests:
+    name: Managed tests on Windows
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Restore tests
+        run: dotnet restore tests/ParquetRsForDotnet.Tests.csproj
+
+      - name: Test net8.0
+        run: dotnet test tests/ParquetRsForDotnet.Tests.csproj -f net8.0 --no-restore --logger "trx;LogFileName=net8.0.trx"
+
+      - name: Test net472
+        run: dotnet test tests/ParquetRsForDotnet.Tests.csproj -f net472 --no-restore --logger "trx;LogFileName=net472.trx"
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: tests/TestResults/*.trx
+
+  examples-and-benchmarks:
+    name: Examples and benchmarks build
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build WriteClrBatches example
+        run: dotnet build examples/WriteClrBatches/WriteClrBatches.csproj
+
+      - name: Build WriteArrowArrays example
+        run: dotnet build examples/WriteArrowArrays/WriteArrowArrays.csproj
+
+      - name: Build ReadSelectedColumns example
+        run: dotnet build examples/ReadSelectedColumns/ReadSelectedColumns.csproj
+
+      - name: Build benchmarks
+        run: dotnet build benchmarks/ParquetRsForDotnet.Benchmarks.csproj
