@@ -42,13 +42,17 @@
   <PropertyGroup>
     <NativeProjectDir>..\native</NativeProjectDir>
     <NativeTargetDir>$(MSBuildThisFileDirectory)bin\$(Configuration)\$(TargetFramework)\native</NativeTargetDir>
+    <NativeCargoTargetDir>$(MSBuildProjectDirectory)\obj\$(Configuration)\native\$(TargetFramework)</NativeCargoTargetDir>
+    <NativePackageCargoTargetDir>$(MSBuildProjectDirectory)\obj\$(Configuration)\native\net8.0</NativePackageCargoTargetDir>
     <NativeConfiguration Condition="'$(Configuration)' == 'Release'">release</NativeConfiguration>
     <NativeConfiguration Condition="'$(NativeConfiguration)' == ''">debug</NativeConfiguration>
     <NativeCargoArgs Condition="'$(Configuration)' == 'Release'">build --release</NativeCargoArgs>
     <NativeCargoArgs Condition="'$(NativeCargoArgs)' == ''">build</NativeCargoArgs>
-    <NativeLibraryPath>$(NativeProjectDir)\target\$(NativeConfiguration)\parquet_rs_for_dotnet.dll</NativeLibraryPath>
-    <NativeLibraryPathLinux>$(NativeProjectDir)\target\$(NativeConfiguration)\libparquet_rs_for_dotnet.so</NativeLibraryPathLinux>
-    <NativeLibraryPathLinuxCross>$(NativeProjectDir)\target\x86_64-unknown-linux-gnu\$(NativeConfiguration)\libparquet_rs_for_dotnet.so</NativeLibraryPathLinuxCross>
+    <NativeLibraryPath>$(NativeCargoTargetDir)\$(NativeConfiguration)\parquet_rs_for_dotnet.dll</NativeLibraryPath>
+    <NativeLibraryPathLinux>$(NativeCargoTargetDir)\$(NativeConfiguration)\libparquet_rs_for_dotnet.so</NativeLibraryPathLinux>
+    <NativeLibraryPathLinuxCross>$(NativeCargoTargetDir)\x86_64-unknown-linux-gnu\$(NativeConfiguration)\libparquet_rs_for_dotnet.so</NativeLibraryPathLinuxCross>
+    <NativePackageLibraryPath>$(NativePackageCargoTargetDir)\$(NativeConfiguration)\parquet_rs_for_dotnet.dll</NativePackageLibraryPath>
+    <NativePackageLibraryPathLinuxCross>$(NativePackageCargoTargetDir)\x86_64-unknown-linux-gnu\$(NativeConfiguration)\libparquet_rs_for_dotnet.so</NativePackageLibraryPathLinuxCross>
   </PropertyGroup>
 
   <ItemGroup>
@@ -73,31 +77,32 @@
   </ItemGroup>
 
   <!-- Pack native libraries into runtimes/<rid>/native/ for NuGet consumers -->
-  <Target Name="BuildNativeParquetLibrary" BeforeTargets="Build">
-    <Exec Command="&quot;$(UserProfile)\.cargo\bin\cargo.exe&quot; $(NativeCargoArgs)"
+  <Target Name="BuildNativeParquetLibrary" BeforeTargets="Build"
+          Condition="'$(TargetFramework)' != ''">
+    <Exec Command="&quot;$(UserProfile)\.cargo\bin\cargo.exe&quot; $(NativeCargoArgs) --target-dir &quot;$(NativeCargoTargetDir)&quot;"
           WorkingDirectory="$(NativeProjectDir)"
           Condition="Exists('$(UserProfile)\.cargo\bin\cargo.exe')" />
   </Target>
 
   <Target Name="CrossBuildNativeParquetLibraryLinux" BeforeTargets="Build"
-          Condition="'$(CrossBuildLinux)' == 'true' And Exists('$(UserProfile)\.cargo\bin\cargo-zigbuild.exe')">
-    <Exec Command="&quot;$(UserProfile)\.cargo\bin\cargo-zigbuild.exe&quot; $(NativeCargoArgs) --target x86_64-unknown-linux-gnu"
+          Condition="'$(TargetFramework)' == 'net8.0' And '$(CrossBuildLinux)' == 'true' And Exists('$(UserProfile)\.cargo\bin\cargo-zigbuild.exe')">
+    <Exec Command="&quot;$(UserProfile)\.cargo\bin\cargo-zigbuild.exe&quot; $(NativeCargoArgs) --target x86_64-unknown-linux-gnu --target-dir &quot;$(NativeCargoTargetDir)&quot;"
           WorkingDirectory="$(NativeProjectDir)" />
   </Target>
 
   <Target Name="IncludeLinuxNativeLibrary" BeforeTargets="_GetPackageFiles"
-          Condition="Exists('$(NativeLibraryPathLinuxCross)')">
+          Condition="Exists('$(NativePackageLibraryPathLinuxCross)')">
     <ItemGroup>
-      <None Include="$(NativeLibraryPathLinuxCross)"
+      <None Include="$(NativePackageLibraryPathLinuxCross)"
             Pack="true"
             PackagePath="runtimes\linux-x64\native" />
     </ItemGroup>
   </Target>
 
   <Target Name="IncludeWindowsNativeLibrary" BeforeTargets="_GetPackageFiles"
-          Condition="Exists('$(NativeLibraryPath)')">
+          Condition="Exists('$(NativePackageLibraryPath)')">
     <ItemGroup>
-      <None Include="$(NativeLibraryPath)"
+      <None Include="$(NativePackageLibraryPath)"
             Pack="true"
             PackagePath="runtimes\win-x64\native" />
     </ItemGroup>
