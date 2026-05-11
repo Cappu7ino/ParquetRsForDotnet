@@ -73,13 +73,6 @@
   </ItemGroup>
 
   <!-- Pack native libraries into runtimes/<rid>/native/ for NuGet consumers -->
-  <ItemGroup>
-    <None Include="$(NativeProjectDir)\target\$(NativeConfiguration)\parquet_rs_for_dotnet.dll"
-          Condition="Exists('$(NativeProjectDir)\target\$(NativeConfiguration)\parquet_rs_for_dotnet.dll')"
-          Pack="true"
-          PackagePath="runtimes\win-x64\native" />
-  </ItemGroup>
-
   <Target Name="BuildNativeParquetLibrary" BeforeTargets="Build">
     <Exec Command="&quot;$(UserProfile)\.cargo\bin\cargo.exe&quot; $(NativeCargoArgs)"
           WorkingDirectory="$(NativeProjectDir)"
@@ -98,6 +91,15 @@
       <None Include="$(NativeLibraryPathLinuxCross)"
             Pack="true"
             PackagePath="runtimes\linux-x64\native" />
+    </ItemGroup>
+  </Target>
+
+  <Target Name="IncludeWindowsNativeLibrary" BeforeTargets="_GetPackageFiles"
+          Condition="Exists('$(NativeLibraryPath)')">
+    <ItemGroup>
+      <None Include="$(NativeLibraryPath)"
+            Pack="true"
+            PackagePath="runtimes\win-x64\native" />
     </ItemGroup>
   </Target>
 
