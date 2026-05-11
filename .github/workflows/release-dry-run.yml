@@ -2,14 +2,6 @@ name: release-dry-run
 
 on:
   workflow_dispatch:
-  pull_request:
-    paths:
-      - .github/workflows/release-dry-run.yml
-      - src/**
-      - native/**
-      - README.md
-      - docs/ai/bootstrap.md
-      - api/**
 
 permissions:
   contents: read
