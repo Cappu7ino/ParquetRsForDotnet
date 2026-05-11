@@ -135,6 +135,60 @@ public sealed class ParquetReaderTests
     }
 
     [Fact]
+    public void RowGroupReader_ReadsArrowColumnBatches_ForRowRange()
+    {
+        using var source = CreateTwoRowGroupNoDecimalFile();
+        using var reader = new ParquetFileReader(source, new ParquetReadOptions { BatchSize = 1 });
+        using var rowGroup = reader.OpenRowGroupReader(1);
+
+        var batches = rowGroup.ReadColumnBatches(0, rowOffset: 1, rowCount: 2).Cast<Int32Array>().ToArray();
+
+        Assert.Equal(2, batches.Length);
+        try
+        {
+            Assert.Equal(1, batches[0].Length);
+            Assert.Equal(1, batches[1].Length);
+            Assert.Equal(5, batches[0].GetValue(0));
+            Assert.Equal(6, batches[1].GetValue(0));
+        }
+        finally
+        {
+            foreach (var batch in batches)
+            {
+                batch.Dispose();
+            }
+        }
+    }
+
+    [Fact]
+    public void RowGroupReader_ReadsClrColumnBatches_ForRowRange()
+    {
+        using var source = CreateTwoRowGroupNoDecimalFile();
+        using var reader = new ParquetFileReader(source, new ParquetReadOptions { BatchSize = 1 });
+        using var rowGroup = reader.OpenRowGroupReader(1);
+
+        var batches = rowGroup.ReadColumnBatches<string>("name", rowOffset: 1, rowCount: 2).ToArray();
+
+        Assert.Equal(2, batches.Length);
+        Assert.Equal(new string?[] { "epsilon" }, batches[0]);
+        Assert.Equal(new string?[] { "zeta" }, batches[1]);
+        Assert.Equal(new string?[] { "epsilon", "zeta" }, batches.SelectMany(static batch => batch).ToArray());
+    }
+
+    [Fact]
+    public void RowGroupReader_ValidatesColumnBatchRowRange()
+    {
+        using var source = CreateTwoRowGroupNoDecimalFile();
+        using var reader = new ParquetFileReader(source);
+        using var rowGroup = reader.OpenRowGroupReader(1);
+
+        Assert.Empty(rowGroup.ReadColumnBatches(0, rowOffset: 1, rowCount: 0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => rowGroup.ReadColumnBatches(0, rowOffset: -1, rowCount: 1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => rowGroup.ReadColumnBatches(0, rowOffset: 0, rowCount: -1));
+        Assert.Throws<ArgumentOutOfRangeException>(() => rowGroup.ReadColumnBatches(0, rowOffset: 2, rowCount: 2));
+    }
+
+    [Fact]
     public void RowGroupReader_ReadsNullableStringColumnBatches_WhenNullsCrossBatchBoundaries()
     {
         using var source = CreateNullableStringBatchFile();

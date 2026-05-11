@@ -11,7 +11,8 @@ use arrow_schema::ffi::FFI_ArrowSchema;
 use arrow_schema::Schema;
 use bytes::Bytes;
 use parquet::arrow::arrow_reader::{
-    ArrowReaderMetadata, ParquetRecordBatchReader, ParquetRecordBatchReaderBuilder,
+    ArrowReaderMetadata, ParquetRecordBatchReader, ParquetRecordBatchReaderBuilder, RowSelection,
+    RowSelector,
 };
 use parquet::arrow::arrow_writer::ArrowWriter;
 use parquet::arrow::ProjectionMask;
@@ -32,6 +33,7 @@ const DEFAULT_MAX_ROW_GROUP_ROW_COUNT: usize = 8 * 1024;
 struct FileWriterHandle {
     writer: ArrowWriter<SinkWriter>,
     schema: Arc<Schema>,
+    max_native_writer_memory_bytes: Option<usize>,
     finished: bool,
 }
 
@@ -61,6 +63,10 @@ pub struct ParquetWriteOptionsFFI {
     pub native_write_batch_size: i32,
     pub max_row_group_rows: i64,
     pub max_row_group_bytes: i64,
+    pub data_page_row_count_limit: i32,
+    pub data_page_size_limit_bytes: i32,
+    pub dictionary_page_size_limit_bytes: i32,
+    pub max_native_writer_memory_bytes: i64,
     pub created_by: *const c_char,
     pub metadata: *const NativeKeyValuePair,
     pub metadata_count: i32,
@@ -603,13 +609,22 @@ pub unsafe extern "C" fn parquet_row_group_column_batch_reader_open(
     row_group_reader: *mut c_void,
     column_name: *const c_char,
     batch_size: i32,
+    row_offset: i64,
+    row_count: i64,
     batch_reader: *mut *mut c_void,
     error: *mut NativeError,
 ) -> i32 {
     clear_error(error);
 
     let result = panic::catch_unwind(AssertUnwindSafe(|| {
-        row_group_column_batch_reader_open(row_group_reader, column_name, batch_size, batch_reader)
+        row_group_column_batch_reader_open(
+            row_group_reader,
+            column_name,
+            batch_size,
+            row_offset,
+            row_count,
+            batch_reader,
+        )
     }));
     match result {
         Ok(Ok(())) => SUCCESS,
@@ -698,6 +713,7 @@ unsafe fn create_file_writer(
         .ok_or_else(|| FfiFailure::new(INVALID_ARGUMENT, "ParquetOutputSink pointer is null."))?;
     let sink_writer = SinkWriter::new(sink)?;
     let props = build_writer_properties(options)?;
+    let max_native_writer_memory_bytes = read_max_native_writer_memory_bytes(options)?;
     let schema = Schema::try_from(&*schema).map_err(|err| {
         FfiFailure::new(
             ARROW_IMPORT_FAILED,
@@ -717,6 +733,7 @@ unsafe fn create_file_writer(
     *writer = Box::into_raw(Box::new(FileWriterHandle {
         writer: writer_handle,
         schema,
+        max_native_writer_memory_bytes,
         finished: false,
     })) as *mut c_void;
     Ok(())
@@ -907,7 +924,7 @@ unsafe fn row_group_reader_read_column(
         ));
     }
 
-    let mut reader = build_projected_column_reader(row_group_reader, column_name, None)?;
+    let mut reader = build_projected_column_reader(row_group_reader, column_name, None, None)?;
 
     let batch = reader
         .next()
@@ -942,6 +959,8 @@ unsafe fn row_group_column_batch_reader_open(
     row_group_reader: *mut c_void,
     column_name: *const c_char,
     batch_size: i32,
+    row_offset: i64,
+    row_count: i64,
     batch_reader: *mut *mut c_void,
 ) -> Result<(), FfiFailure> {
     if batch_reader.is_null() {
@@ -958,8 +977,13 @@ unsafe fn row_group_column_batch_reader_open(
         ));
     }
 
-    let reader =
-        build_projected_column_reader(row_group_reader, column_name, Some(batch_size as usize))?;
+    let row_range = normalize_read_row_range(row_offset, row_count)?;
+    let reader = build_projected_column_reader(
+        row_group_reader,
+        column_name,
+        Some(batch_size as usize),
+        row_range,
+    )?;
     *batch_reader = Box::into_raw(Box::new(ColumnBatchReaderHandle { reader })) as *mut c_void;
     Ok(())
 }
@@ -1023,6 +1047,7 @@ unsafe fn build_projected_column_reader(
     row_group_reader: *mut c_void,
     column_name: *const c_char,
     batch_size: Option<usize>,
+    row_range: Option<(usize, usize)>,
 ) -> Result<ParquetRecordBatchReader, FfiFailure> {
     if row_group_reader.is_null() {
         return Err(FfiFailure::new(
@@ -1057,20 +1082,65 @@ unsafe fn build_projected_column_reader(
         })?;
 
     let projection = ProjectionMask::roots(schema_descr, [column_index]);
-    ParquetRecordBatchReaderBuilder::new_with_metadata(
+    let mut builder = ParquetRecordBatchReaderBuilder::new_with_metadata(
         handle.source.clone(),
         handle.metadata.clone(),
     )
     .with_row_groups(vec![handle.row_group_index])
     .with_projection(projection)
-    .with_batch_size(batch_size.unwrap_or(handle.row_count as usize))
-    .build()
-    .map_err(|err| {
+    .with_batch_size(batch_size.unwrap_or(handle.row_count as usize));
+
+    if let Some((row_offset, row_count)) = row_range {
+        if row_offset > handle.row_count as usize
+            || row_count > handle.row_count as usize - row_offset
+        {
+            return Err(FfiFailure::new(
+                INVALID_ARGUMENT,
+                "Read row range must be within the row-group row count.",
+            ));
+        }
+
+        // Row selection limits the input rows parquet-rs reads; batch size still
+        // controls how the selected rows are chunked into returned Arrow arrays.
+        let mut selectors = Vec::with_capacity(3);
+        if row_offset > 0 {
+            selectors.push(RowSelector::skip(row_offset));
+        }
+
+        selectors.push(RowSelector::select(row_count));
+
+        let trailing_rows = handle.row_count as usize - row_offset - row_count;
+        if trailing_rows > 0 {
+            selectors.push(RowSelector::skip(trailing_rows));
+        }
+
+        builder = builder.with_row_selection(RowSelection::from(selectors));
+    }
+
+    builder.build().map_err(|err| {
         FfiFailure::new(
             PARQUET_ENCODE_FAILED,
             format!("Failed to build parquet reader: {err}"),
         )
     })
+}
+
+fn normalize_read_row_range(
+    row_offset: i64,
+    row_count: i64,
+) -> Result<Option<(usize, usize)>, FfiFailure> {
+    if row_count < 0 {
+        return Ok(None);
+    }
+
+    if row_offset < 0 {
+        return Err(FfiFailure::new(
+            INVALID_ARGUMENT,
+            "Read row offset must be greater than or equal to zero.",
+        ));
+    }
+
+    Ok(Some((row_offset as usize, row_count as usize)))
 }
 
 unsafe fn write_batch(writer: *mut c_void, batch: *mut FFI_ArrowArray) -> Result<(), FfiFailure> {
@@ -1122,7 +1192,22 @@ unsafe fn write_batch(writer: *mut c_void, batch: *mut FFI_ArrowArray) -> Result
             PARQUET_ENCODE_FAILED,
             format!("Parquet encoding failed: {err}"),
         )
-    })
+    })?;
+
+    if let Some(limit) = handle.max_native_writer_memory_bytes {
+        // parquet-rs buffers the active row group internally; flushing here bounds
+        // accumulated native buffers between managed WriteBatch calls.
+        if handle.writer.in_progress_rows() > 0 && handle.writer.memory_size() > limit {
+            handle.writer.flush().map_err(|err| {
+                FfiFailure::new(
+                    PARQUET_ENCODE_FAILED,
+                    format!("Parquet row-group flush failed: {err}"),
+                )
+            })?;
+        }
+    }
+
+    Ok(())
 }
 
 unsafe fn finish_file_writer(writer: *mut c_void) -> Result<(), FfiFailure> {
@@ -1202,6 +1287,26 @@ fn build_writer_properties(
         builder = builder.set_write_batch_size(options.native_write_batch_size as usize);
     }
 
+    if let Some(value) = normalize_i32_limit(
+        options.data_page_row_count_limit,
+        "Data page row count limit",
+    )? {
+        builder = builder.set_data_page_row_count_limit(value);
+    }
+
+    if let Some(value) =
+        normalize_i32_limit(options.data_page_size_limit_bytes, "Data page size limit")?
+    {
+        builder = builder.set_data_page_size_limit(value);
+    }
+
+    if let Some(value) = normalize_i32_limit(
+        options.dictionary_page_size_limit_bytes,
+        "Dictionary page size limit",
+    )? {
+        builder = builder.set_dictionary_page_size_limit(value);
+    }
+
     builder = builder.set_created_by(
         read_optional_string(options.created_by)?
             .unwrap_or_else(|| "ParquetRsForDotnet".to_string()),
@@ -1215,7 +1320,26 @@ fn build_writer_properties(
     Ok(builder.build())
 }
 
+fn read_max_native_writer_memory_bytes(
+    options: *const ParquetWriteOptionsFFI,
+) -> Result<Option<usize>, FfiFailure> {
+    let options = unsafe {
+        options.as_ref().ok_or_else(|| {
+            FfiFailure::new(INVALID_ARGUMENT, "ParquetWriteOptions pointer is null.")
+        })?
+    };
+
+    normalize_named_limit(
+        options.max_native_writer_memory_bytes,
+        "Native writer memory threshold",
+    )
+}
+
 fn normalize_limit(value: i64) -> Result<Option<usize>, FfiFailure> {
+    normalize_named_limit(value, "Parquet row group limit")
+}
+
+fn normalize_named_limit(value: i64, name: &str) -> Result<Option<usize>, FfiFailure> {
     if value < 0 {
         return Ok(None);
     }
@@ -1223,11 +1347,15 @@ fn normalize_limit(value: i64) -> Result<Option<usize>, FfiFailure> {
     if value == 0 {
         return Err(FfiFailure::new(
             INVALID_ARGUMENT,
-            "Parquet row group limits must be greater than zero when specified.",
+            format!("{name} must be greater than zero when specified."),
         ));
     }
 
     Ok(Some(value as usize))
+}
+
+fn normalize_i32_limit(value: i32, name: &str) -> Result<Option<usize>, FfiFailure> {
+    normalize_named_limit(value as i64, name)
 }
 
 fn map_compression(value: i32) -> Result<Compression, FfiFailure> {
@@ -1412,6 +1540,10 @@ mod tests {
             native_write_batch_size: -1,
             max_row_group_rows: -1,
             max_row_group_bytes: -1,
+            data_page_row_count_limit: -1,
+            data_page_size_limit_bytes: -1,
+            dictionary_page_size_limit_bytes: -1,
+            max_native_writer_memory_bytes: -1,
             created_by: ptr::null(),
             metadata: ptr::null(),
             metadata_count: 0,
@@ -1473,6 +1605,10 @@ mod tests {
             native_write_batch_size: -1,
             max_row_group_rows: -1,
             max_row_group_bytes: -1,
+            data_page_row_count_limit: 128,
+            data_page_size_limit_bytes: 4096,
+            dictionary_page_size_limit_bytes: 2048,
+            max_native_writer_memory_bytes: -1,
             created_by: created_by.as_ptr(),
             metadata: metadata.as_ptr(),
             metadata_count: metadata.len() as i32,
@@ -1480,6 +1616,9 @@ mod tests {
 
         let props = build_writer_properties(&options).unwrap();
         assert_eq!(props.created_by(), "unit-test");
+        assert_eq!(props.data_page_row_count_limit(), 128);
+        assert_eq!(props.data_page_size_limit(), 4096);
+        assert_eq!(props.dictionary_page_size_limit(), 2048);
         let metadata_binding = props.key_value_metadata();
         let metadata = metadata_binding.as_ref().unwrap();
         assert_eq!(metadata[0].key, "source");

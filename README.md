@@ -133,7 +133,8 @@ Option intent:
 - `ArrowMaterializationMode`
   - tuning knob for CLR array-backed batch materialization
 - `NativeWriteBatchSize`
-  - advanced knob that optionally overrides parquet-rs internal encoder write batch size; it does not split managed `WriteBatch(...)` calls or define row-group boundaries
+  - advanced knob that optionally overrides parquet-rs encoder chunk size; it does not split managed `WriteBatch(...)` calls, set data page size, or define row-group boundaries
+  - defaults to `8_192` rows in this library when unset
 - `CreatedBy`, `FileMetadata`
   - flow into native parquet writer properties
 

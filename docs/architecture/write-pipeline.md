@@ -25,7 +25,7 @@ CLR arrays / IArrowArray
 
 - Row-group boundaries are controlled by native parquet writer properties.
 - Use `MaxRowGroupRows` or `MaxRowGroupBytes` to bound row groups.
-- `NativeWriteBatchSize` controls parquet-rs encoder chunking, not row-group boundaries.
+- `NativeWriteBatchSize` controls parquet-rs encoder chunking, not managed batch size, data page size, or row-group boundaries.
 
 ## Ownership
 

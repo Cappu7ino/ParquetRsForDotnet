@@ -5,6 +5,7 @@ internal static class ParquetWriteOptionsDefaults
     public static ParquetWriteOptions ApplyForBatchWriter(ParquetWriteOptions options)
     {
         TargetFrameworkCompat.ThrowIfNull(options);
+        options.Validate();
 
         if (options.NativeWriteBatchSize is not null)
         {
@@ -15,6 +16,10 @@ internal static class ParquetWriteOptionsDefaults
         {
             MaxRowGroupRows = options.MaxRowGroupRows,
             MaxRowGroupBytes = options.MaxRowGroupBytes,
+            DataPageRowCountLimit = options.DataPageRowCountLimit,
+            DataPageSizeLimitBytes = options.DataPageSizeLimitBytes,
+            DictionaryPageSizeLimitBytes = options.DictionaryPageSizeLimitBytes,
+            MaxNativeWriterMemoryBytes = options.MaxNativeWriterMemoryBytes,
             Compression = options.Compression,
             EnableDictionaryEncoding = options.EnableDictionaryEncoding,
             StatisticsLevel = options.StatisticsLevel,

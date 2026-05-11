@@ -71,6 +71,58 @@ public sealed class ParquetWriterTests
         Assert.Equal(new string?[] { "delta", null, "omega" }, (string?[])nameColumn.Data);
     }
 
+    [Fact]
+    public void FileWriter_RejectsInvalidMemoryTuningOptions()
+    {
+        var schema = new ParquetSchema([new ParquetColumn("id", ParquetColumnType.Int32)]);
+
+        AssertInvalidOption(schema, new ParquetWriteOptions { DataPageRowCountLimit = 0 }, "DataPageRowCountLimit");
+        AssertInvalidOption(schema, new ParquetWriteOptions { DataPageSizeLimitBytes = 0 }, "DataPageSizeLimitBytes");
+        AssertInvalidOption(schema, new ParquetWriteOptions { DictionaryPageSizeLimitBytes = 0 }, "DictionaryPageSizeLimitBytes");
+        AssertInvalidOption(schema, new ParquetWriteOptions { MaxNativeWriterMemoryBytes = 0 }, "MaxNativeWriterMemoryBytes");
+    }
+
+    [Fact]
+    public void FileWriter_FlushesRowGroups_WhenNativeWriterMemoryThresholdIsExceeded()
+    {
+        var schema = new ParquetSchema([new ParquetColumn("name", ParquetColumnType.String)]);
+
+        using var destination = new MemoryStream();
+        using (var writer = new ParquetFileWriter(destination, schema, new ParquetWriteOptions
+        {
+            MaxRowGroupRows = 1_000_000,
+            MaxNativeWriterMemoryBytes = 1,
+        }))
+        {
+            writer.WriteBatch(new[] { new string('a', 4096) });
+            writer.WriteBatch(new[] { new string('b', 4096) });
+            writer.Finish();
+        }
+
+        destination.Position = 0;
+        using var reader = new ParquetFileReader(destination);
+        Assert.Equal(2, reader.RowGroupCount);
+    }
+
+#if NET8_0_OR_GREATER
+    [Fact]
+    public void NativeOptionScope_MarshalsMemoryTuningOptions()
+    {
+        using var nativeOptions = NativeParquetBridge.CreateNativeOptionScope(new ParquetWriteOptions
+        {
+            DataPageRowCountLimit = 123,
+            DataPageSizeLimitBytes = 456,
+            DictionaryPageSizeLimitBytes = 789,
+            MaxNativeWriterMemoryBytes = 1024,
+        });
+
+        Assert.Equal(123, nativeOptions.Options.DataPageRowCountLimit);
+        Assert.Equal(456, nativeOptions.Options.DataPageSizeLimitBytes);
+        Assert.Equal(789, nativeOptions.Options.DictionaryPageSizeLimitBytes);
+        Assert.Equal(1024, nativeOptions.Options.MaxNativeWriterMemoryBytes);
+    }
+#endif
+
     [Fact(Skip = "Profiling-only test; run manually when collecting write-path profiles.")]
     public void FileWriter_WritesLargePrimitiveClrBatches_ForProfiling()
     {
@@ -468,6 +520,13 @@ public sealed class ParquetWriterTests
             throw new InvalidOperationException("write failed");
         }
 #endif
+    }
+
+    private static void AssertInvalidOption(ParquetSchema schema, ParquetWriteOptions options, string paramName)
+    {
+        using var destination = new MemoryStream();
+        var exception = Assert.Throws<ArgumentOutOfRangeException>(() => new ParquetFileWriter(destination, schema, options));
+        Assert.Equal(paramName, exception.ParamName);
     }
 
     private static System.Array CreateNullableDateArray(params DateTime?[] values)

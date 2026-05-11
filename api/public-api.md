@@ -51,11 +51,22 @@ This file describes stable public-contract behavior for agents and SDK integrato
 - Responsibility: read Arrow-native or CLR-materialized columns from one row group.
 - Lifecycle: created by `ParquetFileReader.OpenRowGroupReader(...)`, used for column reads, disposed.
 - Thread safety: not documented as thread-safe.
+- Active operations:
+  - `ReadColumn(int)` / `ReadColumn(string)` returning Arrow arrays
+  - `ReadColumn<T>(int)` / `ReadColumn<T>(string)` returning CLR arrays
+  - `ReadColumnBatches(int)` / `ReadColumnBatches(string)` returning Arrow array batches
+  - `ReadColumnBatches(int, long, long)` / `ReadColumnBatches(string, long, long)` returning Arrow array batches for a row range
+  - `ReadColumnBatches<T>(int)` / `ReadColumnBatches<T>(string)` returning CLR array batches
+  - `ReadColumnBatches<T>(int, long, long)` / `ReadColumnBatches<T>(string, long, long)` returning CLR array batches for a row range
 - Intended usage: read only the columns needed from a specific row group.
+- Intended row-range usage: positional windows, pagination-style access, retry/resume, sampling, and deterministic row-group chunking when row offsets are already known.
 - Pitfalls:
   - `ReadColumn<T>` validates exact CLR type
   - `ReadColumn(...)` and `ReadColumn<T>(...)` return the entire selected row-group column
-  - use `ReadColumnBatches(...)` or `ReadColumnBatches<T>(...)` for lower peak memory
+  - use `ReadColumnBatches(...)`, `ReadColumnBatches(..., rowOffset, rowCount)`, or CLR equivalents for lower peak memory
+  - `BatchSize` chunks returned arrays; row-range overloads additionally limit which input rows are read
+  - row-range batched reads are scoped to the opened row group and validate that the range is within `RowCount`
+  - row-range reads are positional selection, not predicate pushdown
   - decimal CLR reads use `SqlDecimal`, not `decimal`
   - date CLR reads differ by target framework
 - Related APIs: `ParquetFileReader`, `Apache.Arrow.IArrowArray`.
@@ -88,6 +99,10 @@ This file describes stable public-contract behavior for agents and SDK integrato
 - Active options:
   - `MaxRowGroupRows`
   - `MaxRowGroupBytes`
+  - `DataPageRowCountLimit`
+  - `DataPageSizeLimitBytes`
+  - `DictionaryPageSizeLimitBytes`
+  - `MaxNativeWriterMemoryBytes`
   - `Compression`
   - `EnableDictionaryEncoding`
   - `StatisticsLevel`
@@ -96,7 +111,9 @@ This file describes stable public-contract behavior for agents and SDK integrato
   - `CreatedBy`
   - `FileMetadata`
 - Pitfalls:
-  - `NativeWriteBatchSize` is an advanced native encoder knob, not a managed batch splitter
+  - `NativeWriteBatchSize` is an advanced parquet-rs encoder chunking knob, not a managed batch splitter, page size, or row-group boundary
+  - `MaxNativeWriterMemoryBytes` is an estimated native writer threshold checked after each managed batch, not a hard process memory limit
+  - smaller page and row-group settings may increase metadata overhead and reduce compression efficiency
   - callers own public `WriteBatch(...)` sizes
 
 ## Type Mapping
