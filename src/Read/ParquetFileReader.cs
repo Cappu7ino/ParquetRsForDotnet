@@ -15,9 +15,17 @@ public sealed class ParquetFileReader : IDisposable
     private bool _disposed;
 
     public ParquetFileReader(Stream input)
+        : this(input, null)
+    {
+    }
+
+    public ParquetFileReader(Stream input, ParquetReadOptions? options)
     {
         TargetFrameworkCompat.ThrowIfNull(input);
+        options ??= new ParquetReadOptions();
+        options.Validate();
 
+        Options = options;
         _source = new ManagedParquetSource(input);
         _nativeReader = NativeParquetBridge.OpenFileReader(_source);
         _arrowSchema = NativeParquetBridge.GetFileReaderSchema(_nativeReader);
@@ -28,6 +36,8 @@ public sealed class ParquetFileReader : IDisposable
     public ParquetSchema Schema { get; }
 
     public int RowGroupCount { get; }
+
+    internal ParquetReadOptions Options { get; }
 
     public ParquetRowGroupReader OpenRowGroupReader(int rowGroupIndex)
     {

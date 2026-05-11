@@ -27,6 +27,15 @@ Use this when the consuming app already operates on Arrow data.
 
 Use this for projection-friendly pipelines.
 
+## Read Large Columns In Batches
+
+1. Create `ParquetFileReader` with `ParquetReadOptions.BatchSize`.
+2. Open the target row group.
+3. Iterate `ReadColumnBatches<T>(...)`.
+4. Process each returned array before moving to the next batch.
+
+Use this when a row-group column is too large to materialize as one managed array.
+
 ## Dependency Injection Wrapper
 
 Prefer an application-specific wrapper over injecting SDK objects directly:

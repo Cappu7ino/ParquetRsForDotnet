@@ -35,3 +35,9 @@
 - Incorrect because parquet metadata and column chunks require random access.
 - Consequence: reader construction fails.
 - Correct alternative: provide a seekable stream or stage data into a seekable source before reading.
+
+## Setting Read Batch Size But Calling `ReadColumn`
+
+- Incorrect because `ReadColumn(...)` returns the full selected row-group column.
+- Consequence: peak memory remains close to full-column materialization.
+- Correct alternative: use `ReadColumnBatches(...)` or `ReadColumnBatches<T>(...)`.

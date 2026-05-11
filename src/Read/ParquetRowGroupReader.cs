@@ -39,6 +39,19 @@ public sealed class ParquetRowGroupReader : IDisposable
         return ReadColumn(_owner.GetColumnIndex(columnName));
     }
 
+    public IEnumerable<IArrowArray> ReadColumnBatches(int columnIndex)
+    {
+        TargetFrameworkCompat.ThrowIfDisposed(_disposed, this);
+        var field = _owner.GetArrowField(columnIndex);
+        return ReadColumnBatchesCore(field, GetReadBatchSize());
+    }
+
+    public IEnumerable<IArrowArray> ReadColumnBatches(string columnName)
+    {
+        TargetFrameworkCompat.ThrowIfDisposed(_disposed, this);
+        return ReadColumnBatches(_owner.GetColumnIndex(columnName));
+    }
+
     public T[] ReadColumn<T>(int columnIndex)
     {
         TargetFrameworkCompat.ThrowIfDisposed(_disposed, this);
@@ -54,6 +67,22 @@ public sealed class ParquetRowGroupReader : IDisposable
     {
         TargetFrameworkCompat.ThrowIfDisposed(_disposed, this);
         return ReadColumn<T>(_owner.GetColumnIndex(columnName));
+    }
+
+    public IEnumerable<T[]> ReadColumnBatches<T>(int columnIndex)
+    {
+        TargetFrameworkCompat.ThrowIfDisposed(_disposed, this);
+
+        var field = _owner.GetArrowField(columnIndex);
+        ValidateRequestedClrType<T>(field);
+
+        return ReadColumnBatchesCore<T>(field, GetReadBatchSize());
+    }
+
+    public IEnumerable<T[]> ReadColumnBatches<T>(string columnName)
+    {
+        TargetFrameworkCompat.ThrowIfDisposed(_disposed, this);
+        return ReadColumnBatches<T>(_owner.GetColumnIndex(columnName));
     }
 
     public void Dispose()
@@ -87,5 +116,54 @@ public sealed class ParquetRowGroupReader : IDisposable
         }
 
         return typeof(Nullable<>).MakeGenericType(expectedType);
+    }
+
+    private int GetReadBatchSize()
+    {
+        if (_owner.Options.BatchSize is int batchSize)
+        {
+            return batchSize;
+        }
+
+        if (RowCount <= 0)
+        {
+            return 1;
+        }
+
+        return RowCount > int.MaxValue ? int.MaxValue : (int)RowCount;
+    }
+
+    private IEnumerable<IArrowArray> ReadColumnBatchesCore(Field field, int batchSize)
+    {
+        var batchReader = NativeParquetBridge.OpenColumnBatchReader(_nativeRowGroupReader, field, batchSize);
+        try
+        {
+            while (true)
+            {
+                TargetFrameworkCompat.ThrowIfDisposed(_disposed, this);
+                var batch = NativeParquetBridge.ReadNextColumnBatch(batchReader, field);
+                if (batch is null)
+                {
+                    yield break;
+                }
+
+                yield return batch;
+            }
+        }
+        finally
+        {
+            NativeParquetBridge.DisposeColumnBatchReader(batchReader);
+        }
+    }
+
+    private IEnumerable<T[]> ReadColumnBatchesCore<T>(Field field, int batchSize)
+    {
+        foreach (var batch in ReadColumnBatchesCore(field, batchSize))
+        {
+            using (batch)
+            {
+                yield return (T[])s_clrMaterializer.Materialize(batch, field);
+            }
+        }
     }
 }

@@ -261,6 +261,74 @@ internal static unsafe class NativeParquetBridge
         }
     }
 
+    internal static IntPtr OpenColumnBatchReader(IntPtr rowGroupReader, Field field, int batchSize)
+    {
+        TargetFrameworkCompat.ThrowIfNull(field);
+
+        NativeError error = default;
+        IntPtr batchReader = IntPtr.Zero;
+        IntPtr columnName = TargetFrameworkCompat.StringToCoTaskMemUtf8(field.Name);
+
+        try
+        {
+            var result = parquet_row_group_column_batch_reader_open(rowGroupReader, columnName, batchSize, &batchReader, &error);
+            if (result == 0)
+            {
+                return batchReader;
+            }
+
+            throw CreateException(result, error.Message);
+        }
+        catch (DllNotFoundException ex)
+        {
+            throw new NativeParquetException(NativeErrorCode.NativeLibraryNotFound, ex.Message);
+        }
+        finally
+        {
+            Marshal.FreeCoTaskMem(columnName);
+        }
+    }
+
+    internal static IArrowArray? ReadNextColumnBatch(IntPtr batchReader, Field field)
+    {
+        TargetFrameworkCompat.ThrowIfNull(field);
+
+        NativeError error = default;
+        var nativeArray = CArrowArray.Create();
+        int hasBatch = 0;
+
+        try
+        {
+            var result = parquet_row_group_column_batch_reader_next(batchReader, nativeArray, &hasBatch, &error);
+            if (result == 0)
+            {
+                return hasBatch == 0 ? null : ArrowArrayImporter.Import(nativeArray, field.DataType);
+            }
+
+            throw CreateException(result, error.Message);
+        }
+        catch (DllNotFoundException ex)
+        {
+            throw new NativeParquetException(NativeErrorCode.NativeLibraryNotFound, ex.Message);
+        }
+        finally
+        {
+            CArrowArray.Free(nativeArray);
+        }
+    }
+
+    internal static void DisposeColumnBatchReader(IntPtr batchReader)
+    {
+        try
+        {
+            parquet_row_group_column_batch_reader_dispose(batchReader);
+        }
+        catch (DllNotFoundException ex)
+        {
+            throw new NativeParquetException(NativeErrorCode.NativeLibraryNotFound, ex.Message);
+        }
+    }
+
     internal static void DisposeRowGroupReader(IntPtr rowGroupReader)
     {
         try
@@ -469,6 +537,24 @@ internal static unsafe class NativeParquetBridge
         IntPtr columnName,
         CArrowArray* array,
         NativeError* error);
+
+    [DllImport("parquet_rs_for_dotnet", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int parquet_row_group_column_batch_reader_open(
+        IntPtr rowGroupReader,
+        IntPtr columnName,
+        int batchSize,
+        IntPtr* batchReader,
+        NativeError* error);
+
+    [DllImport("parquet_rs_for_dotnet", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int parquet_row_group_column_batch_reader_next(
+        IntPtr batchReader,
+        CArrowArray* array,
+        int* hasBatch,
+        NativeError* error);
+
+    [DllImport("parquet_rs_for_dotnet", CallingConvention = CallingConvention.Cdecl)]
+    private static extern void parquet_row_group_column_batch_reader_dispose(IntPtr batchReader);
 
 #if !NET8_0_OR_GREATER
     [DllImport("kernel32", CharSet = CharSet.Unicode, SetLastError = true)]

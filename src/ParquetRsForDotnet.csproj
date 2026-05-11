@@ -17,7 +17,7 @@
   <!-- NuGet package metadata -->
   <PropertyGroup>
     <PackageId>ParquetRsForDotnet</PackageId>
-    <Version>0.1.0</Version>
+    <Version>0.1.1</Version>
     <Authors>Azure Data Movement</Authors>
     <Description>Arrow-native Parquet reader and writer for .NET, powered by the Rust parquet crate via Arrow C Data interop.</Description>
     <PackageTags>parquet;arrow;rust;native;interop</PackageTags>

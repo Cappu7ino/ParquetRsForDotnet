@@ -21,3 +21,18 @@ SqlDecimal?[] amounts = rowGroup.ReadColumn<SqlDecimal?>("amount");
 - Nullable value columns use nullable `T?`.
 - Decimal columns use `SqlDecimal` / `SqlDecimal?`.
 - Date columns use `DateOnly` on `net8.0` and `DateTime` on `netstandard2.0`.
+
+## Large Columns
+
+Use batched CLR reads to reduce peak memory:
+
+```csharp
+using var input = File.OpenRead("orders.parquet");
+using var reader = new ParquetFileReader(input, new ParquetReadOptions { BatchSize = 8192 });
+using var rowGroup = reader.OpenRowGroupReader(0);
+
+foreach (int[] idBatch in rowGroup.ReadColumnBatches<int>("id"))
+{
+    // Process one managed array batch.
+}
+```

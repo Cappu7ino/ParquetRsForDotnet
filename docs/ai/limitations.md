@@ -26,6 +26,8 @@ This file exists to prevent AI coding agents from inventing unsupported patterns
 - Public writes receive complete column arrays for one batch.
 - CLR reads allocate a full managed array for the requested row-group column.
 - Arrow reads return Arrow arrays for the requested row-group column.
+- Batched read APIs reduce peak memory by returning one projected column batch at a time.
+- `ParquetReadOptions.BatchSize` only helps when using `ReadColumnBatches(...)` APIs.
 - The read path should not introduce whole-file buffering.
 
 ## Concurrency Assumptions

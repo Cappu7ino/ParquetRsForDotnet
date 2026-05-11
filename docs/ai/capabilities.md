@@ -28,6 +28,13 @@
 - Performance expectations: allocates managed arrays for the selected column only.
 - Constraints: decimal columns materialize as `SqlDecimal`; date columns depend on target framework.
 
+## Read Column Batches
+
+- Purpose: reduce peak memory when reading large row-group columns.
+- Recommended usage: pass `ParquetReadOptions { BatchSize = ... }` to `ParquetFileReader`, then call `ReadColumnBatches(...)` or `ReadColumnBatches<T>(...)`.
+- Performance expectations: parquet-rs returns projected column data in smaller record batches.
+- Constraints: existing `ReadColumn(...)` APIs still return the full row-group column and ignore the batch size for their public return shape.
+
 ## Configure Writer Properties
 
 - Purpose: control parquet layout and metadata.

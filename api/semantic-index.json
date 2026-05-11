@@ -15,6 +15,11 @@
       "limitations": ["input stream must be seekable", "read by row group then column", "not row-object oriented"]
     },
     {
+      "name": "batched column read",
+      "keywords": ["ParquetReadOptions", "BatchSize", "ReadColumnBatches", "peak memory", "column batches"],
+      "limitations": ["BatchSize only reduces memory with ReadColumnBatches APIs", "ReadColumn still returns the full row-group column"]
+    },
+    {
       "name": "target framework date behavior",
       "keywords": ["Date32", "Date64", "DateOnly", "DateTime", "netstandard2.0", "net472"],
       "limitations": ["DateOnly is unavailable on netstandard2.0", "netstandard2.0 date columns materialize as DateTime"]
@@ -40,17 +45,24 @@
       "lifecycle": ["construct with seekable stream", "open row groups", "dispose"],
       "threading": "No thread-safety guarantee; coordinate access externally.",
       "limitations": ["input stream must be seekable", "no async API"],
-      "relatedTypes": ["ParquetRowGroupReader", "ParquetSchema"]
+      "relatedTypes": ["ParquetRowGroupReader", "ParquetSchema", "ParquetReadOptions"]
     },
     {
       "type": "ParquetRowGroupReader",
       "kind": "class",
-      "capabilities": ["read Arrow column", "read CLR column", "column projection"],
+      "capabilities": ["read Arrow column", "read CLR column", "read Arrow column batches", "read CLR column batches", "column projection"],
       "intendedUsage": "Read selected columns from one parquet row group.",
       "lifecycle": ["created by ParquetFileReader", "read columns", "dispose"],
       "threading": "No thread-safety guarantee; coordinate access externally.",
-      "limitations": ["ReadColumn<T> requires exact CLR type", "decimal reads use SqlDecimal", "date reads depend on target framework"],
+      "limitations": ["ReadColumn<T> requires exact CLR type", "ReadColumn returns the full selected row-group column", "ReadColumnBatches is required for lower peak memory", "decimal reads use SqlDecimal", "date reads depend on target framework"],
       "relatedTypes": ["Apache.Arrow.IArrowArray", "System.Data.SqlTypes.SqlDecimal"]
+    },
+    {
+      "type": "ParquetReadOptions",
+      "kind": "class",
+      "capabilities": ["configure column read batch size"],
+      "intendedUsage": "Configure batched column reads to reduce peak memory for large row-group columns.",
+      "limitations": ["BatchSize must be greater than zero", "BatchSize does not change full-column ReadColumn return shape"]
     },
     {
       "type": "ParquetWriteOptions",

@@ -13,6 +13,7 @@ Use this file when integrating the `ParquetRsForDotnet` NuGet package from anoth
 
 - Write parquet: `ParquetFileWriter` + explicit `ParquetSchema` + `WriteBatch(...)`.
 - Read parquet: `ParquetFileReader` + `OpenRowGroupReader(...)` + `ReadColumn(...)`.
+- Reduce read peak memory: construct `ParquetFileReader` with `ParquetReadOptions.BatchSize` and use `ReadColumnBatches(...)`.
 - Configure writes: `ParquetWriteOptions`.
 - Handle native failures: catch `NativeParquetException` and inspect `ErrorCode`.
 
@@ -45,6 +46,7 @@ var ids = rowGroup.ReadColumn<int>("id");
 - Input streams must be seekable.
 - Read explicitly by row group, then by column.
 - Use `ReadColumn(...)` for Arrow arrays and `ReadColumn<T>(...)` for CLR arrays.
+- Use `ReadColumnBatches(...)` when a row-group column is too large to materialize in one array.
 - Dispose row-group readers before disposing the file reader.
 
 ## Type Mapping Cheatsheet
@@ -66,6 +68,12 @@ var ids = rowGroup.ReadColumn<int>("id");
 - `MaxRowGroupRows`: maximum row count per parquet row group.
 - `MaxRowGroupBytes`: approximate maximum byte size per parquet row group.
 - `NativeWriteBatchSize`: advanced parquet-rs encoder write batch size; does not split managed `WriteBatch(...)` calls.
+
+## Read Options That Matter
+
+- `BatchSize`: maximum row count per array yielded by `ReadColumnBatches(...)`.
+- `BatchSize` does not change `ReadColumn(...)`; full-column reads still return the entire row-group column.
+- Leave unset to preserve current one-batch-per-row-group-column behavior.
 - `Compression`: default is `Zstd`.
 - `EnableDictionaryEncoding`: default is `true`.
 - `StatisticsLevel`: default is chunk-level statistics.
@@ -81,6 +89,7 @@ var ids = rowGroup.ReadColumn<int>("id");
 - Do not read decimal columns as `decimal`; use `SqlDecimal` for CLR reads.
 - Do not use `DateOnly` from .NET Framework / `netstandard2.0` consumers.
 - Do not assume `NativeWriteBatchSize` controls row-group boundaries.
+- Do not assume `ParquetReadOptions.BatchSize` reduces memory unless using `ReadColumnBatches(...)`.
 
 ## Native Assets
 

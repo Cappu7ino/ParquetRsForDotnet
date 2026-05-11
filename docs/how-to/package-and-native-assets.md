@@ -15,8 +15,8 @@ dotnet pack src/ParquetRsForDotnet.csproj -c Release
 Expected package outputs:
 
 ```text
-src/bin/Release/ParquetRsForDotnet.0.1.0.nupkg
-src/bin/Release/ParquetRsForDotnet.0.1.0.snupkg
+src/bin/Release/ParquetRsForDotnet.0.1.1.nupkg
+src/bin/Release/ParquetRsForDotnet.0.1.1.snupkg
 ```
 
 Expected native asset in the `.nupkg`:
@@ -69,7 +69,7 @@ From PowerShell:
 
 ```powershell
 Add-Type -AssemblyName System.IO.Compression.FileSystem
-[IO.Compression.ZipFile]::OpenRead("src/bin/Release/ParquetRsForDotnet.0.1.0.nupkg").Entries |
+[IO.Compression.ZipFile]::OpenRead("src/bin/Release/ParquetRsForDotnet.0.1.1.nupkg").Entries |
     Select-Object -ExpandProperty FullName
 ```
 

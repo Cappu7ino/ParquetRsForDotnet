@@ -10,7 +10,9 @@ use arrow_array::RecordBatch;
 use arrow_schema::ffi::FFI_ArrowSchema;
 use arrow_schema::Schema;
 use bytes::Bytes;
-use parquet::arrow::arrow_reader::{ArrowReaderMetadata, ParquetRecordBatchReaderBuilder};
+use parquet::arrow::arrow_reader::{
+    ArrowReaderMetadata, ParquetRecordBatchReader, ParquetRecordBatchReaderBuilder,
+};
 use parquet::arrow::arrow_writer::ArrowWriter;
 use parquet::arrow::ProjectionMask;
 use parquet::basic::Compression;
@@ -45,6 +47,10 @@ struct RowGroupReaderHandle {
     schema: Arc<Schema>,
     row_group_index: usize,
     row_count: i64,
+}
+
+struct ColumnBatchReaderHandle {
+    reader: ParquetRecordBatchReader,
 }
 
 #[repr(C)]
@@ -593,6 +599,60 @@ pub unsafe extern "C" fn parquet_row_group_reader_read_column(
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn parquet_row_group_column_batch_reader_open(
+    row_group_reader: *mut c_void,
+    column_name: *const c_char,
+    batch_size: i32,
+    batch_reader: *mut *mut c_void,
+    error: *mut NativeError,
+) -> i32 {
+    clear_error(error);
+
+    let result = panic::catch_unwind(AssertUnwindSafe(|| {
+        row_group_column_batch_reader_open(row_group_reader, column_name, batch_size, batch_reader)
+    }));
+    match result {
+        Ok(Ok(())) => SUCCESS,
+        Ok(Err(failure)) => set_error(error, failure.code, failure.message),
+        Err(_) => set_error(
+            error,
+            INTERNAL_PANIC,
+            "Rust parquet row-group column batch reader creation panicked.",
+        ),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn parquet_row_group_column_batch_reader_next(
+    batch_reader: *mut c_void,
+    array: *mut FFI_ArrowArray,
+    has_batch: *mut i32,
+    error: *mut NativeError,
+) -> i32 {
+    clear_error(error);
+
+    let result = panic::catch_unwind(AssertUnwindSafe(|| {
+        row_group_column_batch_reader_next(batch_reader, array, has_batch)
+    }));
+    match result {
+        Ok(Ok(())) => SUCCESS,
+        Ok(Err(failure)) => set_error(error, failure.code, failure.message),
+        Err(_) => set_error(
+            error,
+            INTERNAL_PANIC,
+            "Rust parquet row-group column batch reader next panicked.",
+        ),
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn parquet_row_group_column_batch_reader_dispose(batch_reader: *mut c_void) {
+    if !batch_reader.is_null() {
+        drop(Box::from_raw(batch_reader as *mut ColumnBatchReaderHandle));
+    }
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn parquet_row_group_reader_dispose(row_group_reader: *mut c_void) {
     if !row_group_reader.is_null() {
         drop(Box::from_raw(row_group_reader as *mut RowGroupReaderHandle));
@@ -847,39 +907,7 @@ unsafe fn row_group_reader_read_column(
         ));
     }
 
-    let handle = &*(row_group_reader as *mut RowGroupReaderHandle);
-    let column_name = CStr::from_ptr(column_name)
-        .to_str()
-        .map_err(|_| FfiFailure::new(INVALID_ARGUMENT, "Column name is not valid UTF-8."))?;
-
-    let schema_descr = handle.metadata.metadata().file_metadata().schema_descr();
-    let column_index = handle
-        .schema
-        .fields()
-        .iter()
-        .position(|field| field.name() == column_name)
-        .ok_or_else(|| {
-            FfiFailure::new(
-                INVALID_ARGUMENT,
-                format!("Column '{column_name}' was not found."),
-            )
-        })?;
-
-    let projection = ProjectionMask::roots(schema_descr, [column_index]);
-    let mut reader = ParquetRecordBatchReaderBuilder::new_with_metadata(
-        handle.source.clone(),
-        handle.metadata.clone(),
-    )
-    .with_row_groups(vec![handle.row_group_index])
-    .with_projection(projection)
-    .with_batch_size(handle.row_count as usize)
-    .build()
-    .map_err(|err| {
-        FfiFailure::new(
-            PARQUET_ENCODE_FAILED,
-            format!("Failed to build parquet reader: {err}"),
-        )
-    })?;
+    let mut reader = build_projected_column_reader(row_group_reader, column_name, None)?;
 
     let batch = reader
         .next()
@@ -901,13 +929,148 @@ unsafe fn row_group_reader_read_column(
         return Err(FfiFailure::new(
             PARQUET_ENCODE_FAILED,
             format!(
-                "Projected parquet read for '{column_name}' returned {} columns instead of 1.",
+                "Projected parquet read returned {} columns instead of 1.",
                 batch.num_columns()
             ),
         ));
     }
 
     export_array(batch.column(0).clone(), array)
+}
+
+unsafe fn row_group_column_batch_reader_open(
+    row_group_reader: *mut c_void,
+    column_name: *const c_char,
+    batch_size: i32,
+    batch_reader: *mut *mut c_void,
+) -> Result<(), FfiFailure> {
+    if batch_reader.is_null() {
+        return Err(FfiFailure::new(
+            INVALID_ARGUMENT,
+            "Column batch reader output pointer is null.",
+        ));
+    }
+
+    if batch_size <= 0 {
+        return Err(FfiFailure::new(
+            INVALID_ARGUMENT,
+            "Column read batch size must be greater than zero.",
+        ));
+    }
+
+    let reader =
+        build_projected_column_reader(row_group_reader, column_name, Some(batch_size as usize))?;
+    *batch_reader = Box::into_raw(Box::new(ColumnBatchReaderHandle { reader })) as *mut c_void;
+    Ok(())
+}
+
+unsafe fn row_group_column_batch_reader_next(
+    batch_reader: *mut c_void,
+    array: *mut FFI_ArrowArray,
+    has_batch: *mut i32,
+) -> Result<(), FfiFailure> {
+    if batch_reader.is_null() {
+        return Err(FfiFailure::new(
+            INVALID_ARGUMENT,
+            "Column batch reader pointer is null.",
+        ));
+    }
+
+    if array.is_null() {
+        return Err(FfiFailure::new(
+            INVALID_ARGUMENT,
+            "Arrow array output pointer is null.",
+        ));
+    }
+
+    if has_batch.is_null() {
+        return Err(FfiFailure::new(
+            INVALID_ARGUMENT,
+            "Column batch availability output pointer is null.",
+        ));
+    }
+
+    let handle = &mut *(batch_reader as *mut ColumnBatchReaderHandle);
+    match handle.reader.next().transpose().map_err(|err| {
+        FfiFailure::new(
+            PARQUET_ENCODE_FAILED,
+            format!("Failed to read parquet column batch: {err}"),
+        )
+    })? {
+        Some(batch) => {
+            if batch.num_columns() != 1 {
+                return Err(FfiFailure::new(
+                    PARQUET_ENCODE_FAILED,
+                    format!(
+                        "Projected parquet batch read returned {} columns instead of 1.",
+                        batch.num_columns()
+                    ),
+                ));
+            }
+
+            export_array(batch.column(0).clone(), array)?;
+            *has_batch = 1;
+        }
+        None => {
+            *has_batch = 0;
+        }
+    }
+
+    Ok(())
+}
+
+unsafe fn build_projected_column_reader(
+    row_group_reader: *mut c_void,
+    column_name: *const c_char,
+    batch_size: Option<usize>,
+) -> Result<ParquetRecordBatchReader, FfiFailure> {
+    if row_group_reader.is_null() {
+        return Err(FfiFailure::new(
+            INVALID_ARGUMENT,
+            "Parquet row-group reader pointer is null.",
+        ));
+    }
+
+    if column_name.is_null() {
+        return Err(FfiFailure::new(
+            INVALID_ARGUMENT,
+            "Column name pointer is null.",
+        ));
+    }
+
+    let handle = &*(row_group_reader as *mut RowGroupReaderHandle);
+    let column_name = CStr::from_ptr(column_name)
+        .to_str()
+        .map_err(|_| FfiFailure::new(INVALID_ARGUMENT, "Column name is not valid UTF-8."))?;
+
+    let schema_descr = handle.metadata.metadata().file_metadata().schema_descr();
+    let column_index = handle
+        .schema
+        .fields()
+        .iter()
+        .position(|field| field.name() == column_name)
+        .ok_or_else(|| {
+            FfiFailure::new(
+                INVALID_ARGUMENT,
+                format!("Column '{column_name}' was not found."),
+            )
+        })?;
+
+    let projection = ProjectionMask::roots(schema_descr, [column_index]);
+    ParquetRecordBatchReaderBuilder::new_with_metadata(
+        handle.source.clone(),
+        handle.metadata.clone(),
+    )
+    .with_row_groups(vec![handle.row_group_index])
+    .with_projection(projection)
+    .with_batch_size(batch_size.unwrap_or(handle.row_count as usize))
+    .build()
+    .map_err(|err| {
+        FfiFailure::new(
+            PARQUET_ENCODE_FAILED,
+            format!("Failed to build parquet reader: {err}"),
+        )
+    })
 }
 
 unsafe fn write_batch(writer: *mut c_void, batch: *mut FFI_ArrowArray) -> Result<(), FfiFailure> {

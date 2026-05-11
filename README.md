@@ -269,7 +269,7 @@ Build and pack with the Windows native library only:
 dotnet pack src/ParquetRsForDotnet.csproj -c Release
 ```
 
-This produces `ParquetRsForDotnet.0.1.0.nupkg` and `ParquetRsForDotnet.0.1.0.snupkg` under `src/bin/Release/`.
+This produces `ParquetRsForDotnet.0.1.1.nupkg` and `ParquetRsForDotnet.0.1.1.snupkg` under `src/bin/Release/`.
 
 ### Cross-build for Linux (opt-in)
 

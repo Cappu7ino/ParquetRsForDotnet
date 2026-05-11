@@ -93,6 +93,72 @@ public sealed class ParquetReaderTests
     }
 
     [Fact]
+    public void RowGroupReader_ReadsArrowColumnBatches_WhenReadBatchSizeIsConfigured()
+    {
+        using var source = CreateTwoRowGroupNoDecimalFile();
+        using var reader = new ParquetFileReader(source, new ParquetReadOptions { BatchSize = 2 });
+        using var rowGroup = reader.OpenRowGroupReader(1);
+
+        var batches = rowGroup.ReadColumnBatches(0).Cast<Int32Array>().ToArray();
+
+        Assert.Equal(2, batches.Length);
+        try
+        {
+            Assert.Equal(2, batches[0].Length);
+            Assert.Equal(1, batches[1].Length);
+            Assert.Null(batches[0].GetValue(0));
+            Assert.Equal(5, batches[0].GetValue(1));
+            Assert.Equal(6, batches[1].GetValue(0));
+        }
+        finally
+        {
+            foreach (var batch in batches)
+            {
+                batch.Dispose();
+            }
+        }
+    }
+
+    [Fact]
+    public void RowGroupReader_ReadsClrColumnBatches_WhenReadBatchSizeIsConfigured()
+    {
+        using var source = CreateTwoRowGroupNoDecimalFile();
+        using var reader = new ParquetFileReader(source, new ParquetReadOptions { BatchSize = 2 });
+        using var rowGroup = reader.OpenRowGroupReader(1);
+
+        var batches = rowGroup.ReadColumnBatches<int?>("id").ToArray();
+
+        Assert.Equal(2, batches.Length);
+        Assert.Equal(new int?[] { null, 5 }, batches[0]);
+        Assert.Equal(new int?[] { 6 }, batches[1]);
+        Assert.Equal(new int?[] { null, 5, 6 }, batches.SelectMany(static batch => batch).ToArray());
+    }
+
+    [Fact]
+    public void RowGroupReader_ReadsNullableStringColumnBatches_WhenNullsCrossBatchBoundaries()
+    {
+        using var source = CreateNullableStringBatchFile();
+        using var reader = new ParquetFileReader(source, new ParquetReadOptions { BatchSize = 2 });
+        using var rowGroup = reader.OpenRowGroupReader(0);
+
+        var batches = rowGroup.ReadColumnBatches<string>("name").ToArray();
+
+        Assert.Equal(3, batches.Length);
+        Assert.Equal(new string?[] { "alpha", null }, batches[0]);
+        Assert.Equal(new string?[] { "gamma", null }, batches[1]);
+        Assert.Equal(new string?[] { "epsilon" }, batches[2]);
+    }
+
+    [Fact]
+    public void FileReader_RejectsInvalidReadBatchSize()
+    {
+        using var source = CreateTwoRowGroupNoDecimalFile();
+
+        var exception = Assert.Throws<ArgumentOutOfRangeException>(() => new ParquetFileReader(source, new ParquetReadOptions { BatchSize = 0 }));
+        Assert.Equal("BatchSize", exception.ParamName);
+    }
+
+    [Fact]
     public void RowGroupReader_ReadsDecimalAndTimestampColumns()
     {
         using var source = CreateTwoRowGroupMixedFile();
@@ -286,6 +352,25 @@ public sealed class ParquetReaderTests
                 });
             }
 
+            writer.Close();
+        }
+
+        destination.Position = 0;
+        return destination;
+    }
+
+    private static MemoryStream CreateNullableStringBatchFile()
+    {
+        var destination = new MemoryStream();
+        var columns = new ParquetSharp.Column[]
+        {
+            new ParquetSharp.Column<string>("name"),
+        };
+
+        using (var writer = new ParquetSharpFileWriter(destination, columns, leaveOpen: true))
+        {
+            using var rowGroup = writer.AppendRowGroup();
+            rowGroup.NextColumn().LogicalWriter<string?>().WriteBatch(new string?[] { "alpha", null, "gamma", null, "epsilon" });
             writer.Close();
         }
 

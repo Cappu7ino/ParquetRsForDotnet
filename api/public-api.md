@@ -37,6 +37,15 @@ This file describes stable public-contract behavior for agents and SDK integrato
   - dispose row-group readers before disposing the file reader
 - Related APIs: `ParquetRowGroupReader`, `ParquetSchema`.
 
+## `ParquetReadOptions`
+
+- Responsibility: configure read behavior.
+- Active options:
+  - `BatchSize`: maximum row count per array yielded by batched column reads.
+- Pitfalls:
+  - `BatchSize` affects `ReadColumnBatches(...)` APIs, not the public shape of full-column `ReadColumn(...)` APIs.
+  - values must be greater than zero.
+
 ## `ParquetRowGroupReader`
 
 - Responsibility: read Arrow-native or CLR-materialized columns from one row group.
@@ -45,6 +54,8 @@ This file describes stable public-contract behavior for agents and SDK integrato
 - Intended usage: read only the columns needed from a specific row group.
 - Pitfalls:
   - `ReadColumn<T>` validates exact CLR type
+  - `ReadColumn(...)` and `ReadColumn<T>(...)` return the entire selected row-group column
+  - use `ReadColumnBatches(...)` or `ReadColumnBatches<T>(...)` for lower peak memory
   - decimal CLR reads use `SqlDecimal`, not `decimal`
   - date CLR reads differ by target framework
 - Related APIs: `ParquetFileReader`, `Apache.Arrow.IArrowArray`.
@@ -99,6 +110,13 @@ This file describes stable public-contract behavior for agents and SDK integrato
 | Date | `Date32` / `Date64` | `DateOnly` on net8.0, `DateTime` on netstandard2.0 | `DateOnly` on net8.0, `DateTime` on netstandard2.0 |
 | Timestamp | `ParquetTimestampSettings` | `DateTime` | `DateTime` |
 | Decimal | `ParquetDecimalSettings` | `decimal` | `SqlDecimal` |
+
+## Batched Reads
+
+- `ReadColumnBatches(int|string)` returns an enumerable of Arrow arrays for one projected row-group column.
+- `ReadColumnBatches<T>(int|string)` returns an enumerable of CLR arrays for one projected row-group column.
+- Each yielded Arrow array should be disposed after processing.
+- CLR batch arrays are managed arrays and do not need disposal.
 
 ## Error API
 

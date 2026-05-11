@@ -23,6 +23,7 @@ seekable Stream
 
 - `ReadColumn(...)` returns Arrow arrays for Arrow-native consumers.
 - `ReadColumn<T>(...)` materializes CLR arrays and validates exact CLR type.
+- `ReadColumnBatches(...)` and `ReadColumnBatches<T>(...)` stream projected column data as smaller arrays when `ParquetReadOptions.BatchSize` is configured.
 - Decimal CLR reads use `SqlDecimal`.
 - Date CLR reads use `DateOnly` on `net8.0` and `DateTime` on `netstandard2.0`.
 
