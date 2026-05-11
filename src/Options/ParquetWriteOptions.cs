@@ -60,7 +60,8 @@ public sealed class ParquetWriteOptions
     public ArrowMaterializationMode ArrowMaterializationMode { get; init; } = ArrowMaterializationMode.Default;
 
     /// <summary>
-    /// Gets the optional parquet-rs internal write batch size, or <see langword="null"/> to use the library default.
+    /// Gets the optional parquet-rs encoder chunk size, or <see langword="null"/> to use the library default.
+    /// This does not split managed write batches or control parquet row-group boundaries.
     /// </summary>
     public int? NativeWriteBatchSize { get; init; }
 

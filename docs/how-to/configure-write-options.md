@@ -25,9 +25,13 @@ var options = new ParquetWriteOptions
 
 ## Native Encoder Tuning
 
-`NativeWriteBatchSize` maps to parquet-rs `set_write_batch_size`. It does not split managed `WriteBatch(...)` calls and does not define row-group boundaries.
+`NativeWriteBatchSize` maps to parquet-rs `set_write_batch_size`. It controls the row chunk size parquet-rs uses while encoding Arrow batches into parquet pages.
 
-Use it only after measuring native writer behavior.
+This is an advanced throughput and temporary native-memory tuning knob. It does not split managed `WriteBatch(...)` calls, does not set parquet data page size, and does not define row-group boundaries.
+
+When unset, this library uses `8_192` rows. The upstream parquet-rs default is `1_024` rows.
+
+Use it only after measuring native writer behavior. Smaller values can reduce some transient encoder working set, but may reduce throughput. Larger values can improve throughput for some workloads, but may increase temporary native memory pressure.
 
 ## Page and Memory Pressure Tuning
 

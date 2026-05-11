@@ -130,7 +130,8 @@ internal struct ParquetWriteOptionsNative
     public int StatisticsLevel;
 
     /// <summary>
-    /// Gets or sets the parquet-rs internal write batch size, or -1 when unset.
+    /// Gets or sets the parquet-rs encoder chunk size, or -1 when unset.
+    /// This is not a managed batch size or row-group limit.
     /// </summary>
     public int NativeWriteBatchSize;
 

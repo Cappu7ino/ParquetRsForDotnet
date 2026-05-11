@@ -100,7 +100,7 @@ This file describes stable public-contract behavior for agents and SDK integrato
   - `CreatedBy`
   - `FileMetadata`
 - Pitfalls:
-  - `NativeWriteBatchSize` is an advanced native encoder knob, not a managed batch splitter
+  - `NativeWriteBatchSize` is an advanced parquet-rs encoder chunking knob, not a managed batch splitter, page size, or row-group boundary
   - `MaxNativeWriterMemoryBytes` is an estimated native writer threshold checked after each managed batch, not a hard process memory limit
   - smaller page and row-group settings may increase metadata overhead and reduce compression efficiency
   - callers own public `WriteBatch(...)` sizes
