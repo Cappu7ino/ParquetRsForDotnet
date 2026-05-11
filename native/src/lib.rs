@@ -11,7 +11,8 @@ use arrow_schema::ffi::FFI_ArrowSchema;
 use arrow_schema::Schema;
 use bytes::Bytes;
 use parquet::arrow::arrow_reader::{
-    ArrowReaderMetadata, ParquetRecordBatchReader, ParquetRecordBatchReaderBuilder,
+    ArrowReaderMetadata, ParquetRecordBatchReader, ParquetRecordBatchReaderBuilder, RowSelection,
+    RowSelector,
 };
 use parquet::arrow::arrow_writer::ArrowWriter;
 use parquet::arrow::ProjectionMask;
@@ -608,13 +609,22 @@ pub unsafe extern "C" fn parquet_row_group_column_batch_reader_open(
     row_group_reader: *mut c_void,
     column_name: *const c_char,
     batch_size: i32,
+    row_offset: i64,
+    row_count: i64,
     batch_reader: *mut *mut c_void,
     error: *mut NativeError,
 ) -> i32 {
     clear_error(error);
 
     let result = panic::catch_unwind(AssertUnwindSafe(|| {
-        row_group_column_batch_reader_open(row_group_reader, column_name, batch_size, batch_reader)
+        row_group_column_batch_reader_open(
+            row_group_reader,
+            column_name,
+            batch_size,
+            row_offset,
+            row_count,
+            batch_reader,
+        )
     }));
     match result {
         Ok(Ok(())) => SUCCESS,
@@ -914,7 +924,7 @@ unsafe fn row_group_reader_read_column(
         ));
     }
 
-    let mut reader = build_projected_column_reader(row_group_reader, column_name, None)?;
+    let mut reader = build_projected_column_reader(row_group_reader, column_name, None, None)?;
 
     let batch = reader
         .next()
@@ -949,6 +959,8 @@ unsafe fn row_group_column_batch_reader_open(
     row_group_reader: *mut c_void,
     column_name: *const c_char,
     batch_size: i32,
+    row_offset: i64,
+    row_count: i64,
     batch_reader: *mut *mut c_void,
 ) -> Result<(), FfiFailure> {
     if batch_reader.is_null() {
@@ -965,8 +977,13 @@ unsafe fn row_group_column_batch_reader_open(
         ));
     }
 
-    let reader =
-        build_projected_column_reader(row_group_reader, column_name, Some(batch_size as usize))?;
+    let row_range = normalize_read_row_range(row_offset, row_count)?;
+    let reader = build_projected_column_reader(
+        row_group_reader,
+        column_name,
+        Some(batch_size as usize),
+        row_range,
+    )?;
     *batch_reader = Box::into_raw(Box::new(ColumnBatchReaderHandle { reader })) as *mut c_void;
     Ok(())
 }
@@ -1030,6 +1047,7 @@ unsafe fn build_projected_column_reader(
     row_group_reader: *mut c_void,
     column_name: *const c_char,
     batch_size: Option<usize>,
+    row_range: Option<(usize, usize)>,
 ) -> Result<ParquetRecordBatchReader, FfiFailure> {
     if row_group_reader.is_null() {
         return Err(FfiFailure::new(
@@ -1064,20 +1082,63 @@ unsafe fn build_projected_column_reader(
         })?;
 
     let projection = ProjectionMask::roots(schema_descr, [column_index]);
-    ParquetRecordBatchReaderBuilder::new_with_metadata(
+    let mut builder = ParquetRecordBatchReaderBuilder::new_with_metadata(
         handle.source.clone(),
         handle.metadata.clone(),
     )
     .with_row_groups(vec![handle.row_group_index])
     .with_projection(projection)
-    .with_batch_size(batch_size.unwrap_or(handle.row_count as usize))
-    .build()
-    .map_err(|err| {
+    .with_batch_size(batch_size.unwrap_or(handle.row_count as usize));
+
+    if let Some((row_offset, row_count)) = row_range {
+        if row_offset > handle.row_count as usize
+            || row_count > handle.row_count as usize - row_offset
+        {
+            return Err(FfiFailure::new(
+                INVALID_ARGUMENT,
+                "Read row range must be within the row-group row count.",
+            ));
+        }
+
+        let mut selectors = Vec::with_capacity(3);
+        if row_offset > 0 {
+            selectors.push(RowSelector::skip(row_offset));
+        }
+
+        selectors.push(RowSelector::select(row_count));
+
+        let trailing_rows = handle.row_count as usize - row_offset - row_count;
+        if trailing_rows > 0 {
+            selectors.push(RowSelector::skip(trailing_rows));
+        }
+
+        builder = builder.with_row_selection(RowSelection::from(selectors));
+    }
+
+    builder.build().map_err(|err| {
         FfiFailure::new(
             PARQUET_ENCODE_FAILED,
             format!("Failed to build parquet reader: {err}"),
         )
     })
+}
+
+fn normalize_read_row_range(
+    row_offset: i64,
+    row_count: i64,
+) -> Result<Option<(usize, usize)>, FfiFailure> {
+    if row_count < 0 {
+        return Ok(None);
+    }
+
+    if row_offset < 0 {
+        return Err(FfiFailure::new(
+            INVALID_ARGUMENT,
+            "Read row offset must be greater than or equal to zero.",
+        ));
+    }
+
+    Ok(Some((row_offset as usize, row_count as usize)))
 }
 
 unsafe fn write_batch(writer: *mut c_void, batch: *mut FFI_ArrowArray) -> Result<(), FfiFailure> {
@@ -1231,10 +1292,9 @@ fn build_writer_properties(
         builder = builder.set_data_page_row_count_limit(value);
     }
 
-    if let Some(value) = normalize_i32_limit(
-        options.data_page_size_limit_bytes,
-        "Data page size limit",
-    )? {
+    if let Some(value) =
+        normalize_i32_limit(options.data_page_size_limit_bytes, "Data page size limit")?
+    {
         builder = builder.set_data_page_size_limit(value);
     }
 

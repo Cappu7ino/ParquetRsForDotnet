@@ -40,3 +40,17 @@ foreach (var batch in rowGroup.ReadColumnBatches("id"))
     }
 }
 ```
+
+Use row-range batched reads when the consumer only needs a slice of a row group:
+
+```csharp
+foreach (var batch in rowGroup.ReadColumnBatches("id", rowOffset: 10_000, rowCount: 5_000))
+{
+    using (batch)
+    {
+        // Process one selected Arrow array batch.
+    }
+}
+```
+
+The row range is relative to the opened row group. `rowOffset` and `rowCount` must be non-negative, and the range must fit within `rowGroup.RowCount`.

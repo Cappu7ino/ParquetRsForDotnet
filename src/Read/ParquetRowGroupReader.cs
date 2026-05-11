@@ -43,13 +43,32 @@ public sealed class ParquetRowGroupReader : IDisposable
     {
         TargetFrameworkCompat.ThrowIfDisposed(_disposed, this);
         var field = _owner.GetArrowField(columnIndex);
-        return ReadColumnBatchesCore(field, GetReadBatchSize());
+        return ReadColumnBatchesCore(field, GetReadBatchSize(), 0, null);
     }
 
     public IEnumerable<IArrowArray> ReadColumnBatches(string columnName)
     {
         TargetFrameworkCompat.ThrowIfDisposed(_disposed, this);
         return ReadColumnBatches(_owner.GetColumnIndex(columnName));
+    }
+
+    public IEnumerable<IArrowArray> ReadColumnBatches(int columnIndex, long rowOffset, long rowCount)
+    {
+        TargetFrameworkCompat.ThrowIfDisposed(_disposed, this);
+        ValidateReadRange(rowOffset, rowCount);
+        if (rowCount == 0)
+        {
+            return Enumerable.Empty<IArrowArray>();
+        }
+
+        var field = _owner.GetArrowField(columnIndex);
+        return ReadColumnBatchesCore(field, GetReadBatchSize(rowCount), rowOffset, rowCount);
+    }
+
+    public IEnumerable<IArrowArray> ReadColumnBatches(string columnName, long rowOffset, long rowCount)
+    {
+        TargetFrameworkCompat.ThrowIfDisposed(_disposed, this);
+        return ReadColumnBatches(_owner.GetColumnIndex(columnName), rowOffset, rowCount);
     }
 
     public T[] ReadColumn<T>(int columnIndex)
@@ -76,13 +95,34 @@ public sealed class ParquetRowGroupReader : IDisposable
         var field = _owner.GetArrowField(columnIndex);
         ValidateRequestedClrType<T>(field);
 
-        return ReadColumnBatchesCore<T>(field, GetReadBatchSize());
+        return ReadColumnBatchesCore<T>(field, GetReadBatchSize(), 0, null);
     }
 
     public IEnumerable<T[]> ReadColumnBatches<T>(string columnName)
     {
         TargetFrameworkCompat.ThrowIfDisposed(_disposed, this);
         return ReadColumnBatches<T>(_owner.GetColumnIndex(columnName));
+    }
+
+    public IEnumerable<T[]> ReadColumnBatches<T>(int columnIndex, long rowOffset, long rowCount)
+    {
+        TargetFrameworkCompat.ThrowIfDisposed(_disposed, this);
+        ValidateReadRange(rowOffset, rowCount);
+        if (rowCount == 0)
+        {
+            return Enumerable.Empty<T[]>();
+        }
+
+        var field = _owner.GetArrowField(columnIndex);
+        ValidateRequestedClrType<T>(field);
+
+        return ReadColumnBatchesCore<T>(field, GetReadBatchSize(rowCount), rowOffset, rowCount);
+    }
+
+    public IEnumerable<T[]> ReadColumnBatches<T>(string columnName, long rowOffset, long rowCount)
+    {
+        TargetFrameworkCompat.ThrowIfDisposed(_disposed, this);
+        return ReadColumnBatches<T>(_owner.GetColumnIndex(columnName), rowOffset, rowCount);
     }
 
     public void Dispose()
@@ -120,22 +160,45 @@ public sealed class ParquetRowGroupReader : IDisposable
 
     private int GetReadBatchSize()
     {
+        return GetReadBatchSize(RowCount);
+    }
+
+    private int GetReadBatchSize(long availableRows)
+    {
         if (_owner.Options.BatchSize is int batchSize)
         {
             return batchSize;
         }
 
-        if (RowCount <= 0)
+        if (availableRows <= 0)
         {
             return 1;
         }
 
-        return RowCount > int.MaxValue ? int.MaxValue : (int)RowCount;
+        return availableRows > int.MaxValue ? int.MaxValue : (int)availableRows;
     }
 
-    private IEnumerable<IArrowArray> ReadColumnBatchesCore(Field field, int batchSize)
+    private void ValidateReadRange(long rowOffset, long rowCount)
     {
-        var batchReader = NativeParquetBridge.OpenColumnBatchReader(_nativeRowGroupReader, field, batchSize);
+        if (rowOffset < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(rowOffset), rowOffset, "Row offset must be greater than or equal to zero.");
+        }
+
+        if (rowCount < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(rowCount), rowCount, "Row count must be greater than or equal to zero.");
+        }
+
+        if (rowOffset > RowCount || rowCount > RowCount - rowOffset)
+        {
+            throw new ArgumentOutOfRangeException(nameof(rowCount), rowCount, $"Row range must be within the row-group row count of {RowCount}.");
+        }
+    }
+
+    private IEnumerable<IArrowArray> ReadColumnBatchesCore(Field field, int batchSize, long rowOffset, long? rowCount)
+    {
+        var batchReader = NativeParquetBridge.OpenColumnBatchReader(_nativeRowGroupReader, field, batchSize, rowOffset, rowCount);
         try
         {
             while (true)
@@ -156,9 +219,9 @@ public sealed class ParquetRowGroupReader : IDisposable
         }
     }
 
-    private IEnumerable<T[]> ReadColumnBatchesCore<T>(Field field, int batchSize)
+    private IEnumerable<T[]> ReadColumnBatchesCore<T>(Field field, int batchSize, long rowOffset, long? rowCount)
     {
-        foreach (var batch in ReadColumnBatchesCore(field, batchSize))
+        foreach (var batch in ReadColumnBatchesCore(field, batchSize, rowOffset, rowCount))
         {
             using (batch)
             {

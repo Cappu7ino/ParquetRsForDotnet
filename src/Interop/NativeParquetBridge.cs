@@ -261,7 +261,7 @@ internal static unsafe class NativeParquetBridge
         }
     }
 
-    internal static IntPtr OpenColumnBatchReader(IntPtr rowGroupReader, Field field, int batchSize)
+    internal static IntPtr OpenColumnBatchReader(IntPtr rowGroupReader, Field field, int batchSize, long rowOffset, long? rowCount)
     {
         TargetFrameworkCompat.ThrowIfNull(field);
 
@@ -271,7 +271,7 @@ internal static unsafe class NativeParquetBridge
 
         try
         {
-            var result = parquet_row_group_column_batch_reader_open(rowGroupReader, columnName, batchSize, &batchReader, &error);
+            var result = parquet_row_group_column_batch_reader_open(rowGroupReader, columnName, batchSize, rowOffset, rowCount ?? -1, &batchReader, &error);
             if (result == 0)
             {
                 return batchReader;
@@ -543,6 +543,8 @@ internal static unsafe class NativeParquetBridge
         IntPtr rowGroupReader,
         IntPtr columnName,
         int batchSize,
+        long rowOffset,
+        long rowCount,
         IntPtr* batchReader,
         NativeError* error);
 

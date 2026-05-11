@@ -36,3 +36,14 @@ foreach (int[] idBatch in rowGroup.ReadColumnBatches<int>("id"))
     // Process one managed array batch.
 }
 ```
+
+Use row-range batched reads to materialize only a slice of a row group:
+
+```csharp
+foreach (int[] idBatch in rowGroup.ReadColumnBatches<int>("id", rowOffset: 10_000, rowCount: 5_000))
+{
+    // Process one selected managed array batch.
+}
+```
+
+The row range is relative to the opened row group. `rowOffset` and `rowCount` must be non-negative, and the range must fit within `rowGroup.RowCount`.

@@ -51,11 +51,19 @@ This file describes stable public-contract behavior for agents and SDK integrato
 - Responsibility: read Arrow-native or CLR-materialized columns from one row group.
 - Lifecycle: created by `ParquetFileReader.OpenRowGroupReader(...)`, used for column reads, disposed.
 - Thread safety: not documented as thread-safe.
+- Active operations:
+  - `ReadColumn(int)` / `ReadColumn(string)` returning Arrow arrays
+  - `ReadColumn<T>(int)` / `ReadColumn<T>(string)` returning CLR arrays
+  - `ReadColumnBatches(int)` / `ReadColumnBatches(string)` returning Arrow array batches
+  - `ReadColumnBatches(int, long, long)` / `ReadColumnBatches(string, long, long)` returning Arrow array batches for a row range
+  - `ReadColumnBatches<T>(int)` / `ReadColumnBatches<T>(string)` returning CLR array batches
+  - `ReadColumnBatches<T>(int, long, long)` / `ReadColumnBatches<T>(string, long, long)` returning CLR array batches for a row range
 - Intended usage: read only the columns needed from a specific row group.
 - Pitfalls:
   - `ReadColumn<T>` validates exact CLR type
   - `ReadColumn(...)` and `ReadColumn<T>(...)` return the entire selected row-group column
-  - use `ReadColumnBatches(...)` or `ReadColumnBatches<T>(...)` for lower peak memory
+  - use `ReadColumnBatches(...)`, `ReadColumnBatches(..., rowOffset, rowCount)`, or CLR equivalents for lower peak memory
+  - row-range batched reads are scoped to the opened row group and validate that the range is within `RowCount`
   - decimal CLR reads use `SqlDecimal`, not `decimal`
   - date CLR reads differ by target framework
 - Related APIs: `ParquetFileReader`, `Apache.Arrow.IArrowArray`.
