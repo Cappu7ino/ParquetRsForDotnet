@@ -59,12 +59,14 @@ This file describes stable public-contract behavior for agents and SDK integrato
   - `ReadColumnBatches<T>(int)` / `ReadColumnBatches<T>(string)` returning CLR array batches
   - `ReadColumnBatches<T>(int, long, long)` / `ReadColumnBatches<T>(string, long, long)` returning CLR array batches for a row range
 - Intended usage: read only the columns needed from a specific row group.
+- Intended row-range usage: positional windows, pagination-style access, retry/resume, sampling, and deterministic row-group chunking when row offsets are already known.
 - Pitfalls:
   - `ReadColumn<T>` validates exact CLR type
   - `ReadColumn(...)` and `ReadColumn<T>(...)` return the entire selected row-group column
   - use `ReadColumnBatches(...)`, `ReadColumnBatches(..., rowOffset, rowCount)`, or CLR equivalents for lower peak memory
   - `BatchSize` chunks returned arrays; row-range overloads additionally limit which input rows are read
   - row-range batched reads are scoped to the opened row group and validate that the range is within `RowCount`
+  - row-range reads are positional selection, not predicate pushdown
   - decimal CLR reads use `SqlDecimal`, not `decimal`
   - date CLR reads differ by target framework
 - Related APIs: `ParquetFileReader`, `Apache.Arrow.IArrowArray`.
