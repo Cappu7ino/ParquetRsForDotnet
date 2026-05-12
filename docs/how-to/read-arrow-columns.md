@@ -23,6 +23,21 @@ for (var rowGroupIndex = 0; rowGroupIndex < reader.RowGroupCount; rowGroupIndex+
 - Read selected columns rather than all columns when possible.
 - Cast returned `IArrowArray` to the expected Arrow array type only after checking schema.
 
+## Projected Row Groups
+
+Pass column names when opening a row-group reader to constrain that reader to the columns the consumer intends to access.
+
+```csharp
+using var input = File.OpenRead("orders.parquet");
+using var reader = new ParquetFileReader(input);
+using var rowGroup = reader.OpenRowGroupReader(0, "id", "eventTime");
+
+using var ids = rowGroup.ReadColumn("id");
+using var eventTimes = rowGroup.ReadColumn("eventTime");
+```
+
+Projection is name-based. Integer column reads still use original schema ordinals, and reads for columns outside the projection throw `InvalidOperationException`.
+
 ## Large Columns
 
 Use batched reads to reduce peak memory. `BatchSize` controls how many rows each returned Arrow array contains; without a row range, the reader still walks the full selected column in the opened row group.

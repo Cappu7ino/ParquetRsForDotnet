@@ -15,6 +15,11 @@
       "limitations": ["input stream must be seekable", "read by row group then column", "not row-object oriented"]
     },
     {
+      "name": "name-based row-group projection",
+      "keywords": ["OpenRowGroupReader", "projectedColumnNames", "ProjectedColumnNames", "ProjectedColumnCount", "column projection"],
+      "limitations": ["projection is selected by schema column names only", "integer read APIs use original schema ordinals", "out-of-projection reads throw InvalidOperationException"]
+    },
+    {
       "name": "batched column read",
       "keywords": ["ParquetReadOptions", "BatchSize", "ReadColumnBatches", "peak memory", "column batches"],
       "limitations": ["BatchSize only reduces memory with ReadColumnBatches APIs", "ReadColumn still returns the full row-group column"]
@@ -40,21 +45,21 @@
     {
       "type": "ParquetFileReader",
       "kind": "class",
-      "capabilities": ["read parquet schema", "inspect row group count", "open row group readers"],
+      "capabilities": ["read parquet schema", "inspect row group count", "open row group readers", "open projected row group readers by column name"],
       "intendedUsage": "Open a seekable parquet stream and create row-group scoped readers.",
       "lifecycle": ["construct with seekable stream", "open row groups", "dispose"],
       "threading": "No thread-safety guarantee; coordinate access externally.",
-      "limitations": ["input stream must be seekable", "no async API"],
+      "limitations": ["input stream must be seekable", "projected row-group readers accept column names only, not ordinals", "no async API"],
       "relatedTypes": ["ParquetRowGroupReader", "ParquetSchema", "ParquetReadOptions"]
     },
     {
       "type": "ParquetRowGroupReader",
       "kind": "class",
-      "capabilities": ["read Arrow column", "read CLR column", "read Arrow column batches", "read CLR column batches", "read row-range Arrow column batches", "read row-range CLR column batches", "column projection"],
+      "capabilities": ["read Arrow column", "read CLR column", "read Arrow column batches", "read CLR column batches", "read row-range Arrow column batches", "read row-range CLR column batches", "column projection", "report projected column names"],
       "intendedUsage": "Read selected columns from one parquet row group.",
       "lifecycle": ["created by ParquetFileReader", "read columns", "dispose"],
       "threading": "No thread-safety guarantee; coordinate access externally.",
-      "limitations": ["ReadColumn<T> requires exact CLR type", "ReadColumn returns the full selected row-group column", "ReadColumnBatches is required for lower peak memory", "BatchSize chunks returned arrays while row-range overloads limit selected input rows", "row-range reads are scoped to the opened row group", "row-range reads are positional selection, not predicate pushdown", "decimal reads use SqlDecimal", "date reads depend on target framework"],
+      "limitations": ["ReadColumn<T> requires exact CLR type", "integer read APIs use original schema ordinals even for projected readers", "out-of-projection reads throw InvalidOperationException", "ReadColumn returns the full selected row-group column", "ReadColumnBatches is required for lower peak memory", "BatchSize chunks returned arrays while row-range overloads limit selected input rows", "row-range reads are scoped to the opened row group", "row-range reads are positional selection, not predicate pushdown", "decimal reads use SqlDecimal", "date reads depend on target framework"],
       "relatedTypes": ["Apache.Arrow.IArrowArray", "System.Data.SqlTypes.SqlDecimal"]
     },
     {

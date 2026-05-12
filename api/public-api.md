@@ -34,6 +34,8 @@ This file describes stable public-contract behavior for agents and SDK integrato
 - Pitfalls:
   - input stream must be seekable
   - row-group index must be in range
+  - projected row-group readers are opened by column name only, for example `OpenRowGroupReader(0, "id", "name")`
+  - empty, duplicate, null, whitespace, and unknown projected column names are rejected when the row-group reader is opened
   - dispose row-group readers before disposing the file reader
 - Related APIs: `ParquetRowGroupReader`, `ParquetSchema`.
 
@@ -52,6 +54,7 @@ This file describes stable public-contract behavior for agents and SDK integrato
 - Lifecycle: created by `ParquetFileReader.OpenRowGroupReader(...)`, used for column reads, disposed.
 - Thread safety: not documented as thread-safe.
 - Active operations:
+  - `ProjectedColumnNames` / `ProjectedColumnCount` describing an optional row-group column projection
   - `ReadColumn(int)` / `ReadColumn(string)` returning Arrow arrays
   - `ReadColumn<T>(int)` / `ReadColumn<T>(string)` returning CLR arrays
   - `ReadColumnBatches(int)` / `ReadColumnBatches(string)` returning Arrow array batches
@@ -62,6 +65,8 @@ This file describes stable public-contract behavior for agents and SDK integrato
 - Intended row-range usage: positional windows, pagination-style access, retry/resume, sampling, and deterministic row-group chunking when row offsets are already known.
 - Pitfalls:
   - `ReadColumn<T>` validates exact CLR type
+  - integer column APIs use original schema ordinals, not positions within `ProjectedColumnNames`
+  - reads for columns outside a projected row-group reader throw `InvalidOperationException`
   - `ReadColumn(...)` and `ReadColumn<T>(...)` return the entire selected row-group column
   - use `ReadColumnBatches(...)`, `ReadColumnBatches(..., rowOffset, rowCount)`, or CLR equivalents for lower peak memory
   - `BatchSize` chunks returned arrays; row-range overloads additionally limit which input rows are read
@@ -134,6 +139,17 @@ This file describes stable public-contract behavior for agents and SDK integrato
 - `ReadColumnBatches<T>(int|string)` returns an enumerable of CLR arrays for one projected row-group column.
 - Each yielded Arrow array should be disposed after processing.
 - CLR batch arrays are managed arrays and do not need disposal.
+
+## Row-Group Column Projection
+
+- `ParquetFileReader.OpenRowGroupReader(int, params string[])` opens a row-group reader constrained to the named columns.
+- Omitting projected column names preserves existing all-column behavior.
+- Projected column names are matched exactly against schema column names with ordinal string comparison.
+- `ParquetRowGroupReader.ProjectedColumnNames` is `null` for unprojected readers and otherwise preserves the validated schema column names in requested order.
+- `ProjectedColumnCount` returns the projected count when a projection is present; otherwise it matches `ColumnCount`.
+- Integer read APIs continue to use original schema ordinals.
+- The order of `ProjectedColumnNames` does not remap integer read APIs to projected positions.
+- Attempting to read a schema column outside the row-group projection throws `InvalidOperationException`.
 
 ## Error API
 

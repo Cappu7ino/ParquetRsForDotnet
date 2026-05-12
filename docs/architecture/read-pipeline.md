@@ -6,7 +6,8 @@
 seekable Stream
   -> ManagedParquetSource callbacks
   -> Rust parquet metadata reader
-  -> row-group scoped projection
+  -> managed row-group projection contract
+  -> parquet-rs column projection for the requested schema column
   -> Arrow C Data export
   -> managed Arrow import
   -> IArrowArray or CLR array
@@ -17,7 +18,10 @@ seekable Stream
 - Input stream must be seekable.
 - Metadata is loaded when `ParquetFileReader` is constructed.
 - Reads are scoped to one row group and one column.
-- Projection should happen before Arrow data crosses back to managed code.
+- Row-group projection is optional and selected by schema column names when the row-group reader is opened.
+- Integer read APIs always refer to original schema ordinals, not positions within a row-group projection.
+- Managed code rejects reads outside a projected row-group reader before calling into native code.
+- Native column reads use parquet-rs projection masks so unrequested columns do not cross back through Arrow C Data.
 
 ## Materialization Choices
 

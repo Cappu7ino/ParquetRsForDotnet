@@ -76,6 +76,7 @@ public sealed class ParquetFileReader : IDisposable
     public int RowGroupCount { get; }
 
     public ParquetRowGroupReader OpenRowGroupReader(int rowGroupIndex);
+    public ParquetRowGroupReader OpenRowGroupReader(int rowGroupIndex, params string[] projectedColumnNames);
 }
 
 public sealed class ParquetRowGroupReader : IDisposable
@@ -83,6 +84,8 @@ public sealed class ParquetRowGroupReader : IDisposable
     public int RowGroupIndex { get; }
     public long RowCount { get; }
     public int ColumnCount { get; }
+    public int ProjectedColumnCount { get; }
+    public IReadOnlyList<string>? ProjectedColumnNames { get; }
 
     public IArrowArray ReadColumn(int columnIndex);
     public IArrowArray ReadColumn(string columnName);
@@ -223,9 +226,9 @@ writer.WriteBatch(ids, timestamps);
 ```csharp
 using var input = File.OpenRead("arrow-batches.parquet");
 using var reader = new ParquetFileReader(input);
-using var rowGroup = reader.OpenRowGroupReader(0);
+using var rowGroup = reader.OpenRowGroupReader(0, "id", "eventTime");
 
-var idColumn = (Int32Array)rowGroup.ReadColumn(0);
+var idColumn = (Int32Array)rowGroup.ReadColumn("id");
 var eventTimeColumn = (TimestampArray)rowGroup.ReadColumn("eventTime");
 ```
 
@@ -235,6 +238,7 @@ Notes:
 - decimal CLR reads materialize as `SqlDecimal` / `SqlDecimal?`
 - input streams must be seekable
 - reads are explicit by row group, then by column
+- optional row-group projection is selected by column names; integer reads still use original schema ordinals, not projected positions
 
 ## Build And Test
 
