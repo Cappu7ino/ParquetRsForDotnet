@@ -15,7 +15,7 @@ using var reader = new ParquetFileReader(input);
 
 for (var rowGroupIndex = 0; rowGroupIndex < reader.RowGroupCount; rowGroupIndex++)
 {
-    using var rowGroup = reader.OpenRowGroupReader(rowGroupIndex);
+    using var rowGroup = reader.OpenRowGroupReader(rowGroupIndex, "id", "amount");
     int[] ids = rowGroup.ReadColumn<int>("id");
     SqlDecimal?[] amounts = rowGroup.ReadColumn<SqlDecimal?>("amount");
 

@@ -73,6 +73,116 @@ public sealed class ParquetReaderTests
     }
 
     [Fact]
+    public void RowGroupReader_OpenWithoutProjection_ReportsAllColumns()
+    {
+        using var source = CreateTwoRowGroupNoDecimalFile();
+        using var reader = new ParquetFileReader(source);
+        using var rowGroup = reader.OpenRowGroupReader(0);
+
+        Assert.Equal(rowGroup.ColumnCount, rowGroup.ProjectedColumnCount);
+        Assert.Null(rowGroup.ProjectedColumnNames);
+    }
+
+    [Fact]
+    public void RowGroupReader_OpenWithProjectedColumnNames_ReadsIncludedColumns()
+    {
+        using var source = CreateTwoRowGroupNoDecimalFile();
+        using var reader = new ParquetFileReader(source);
+        using var rowGroup = reader.OpenRowGroupReader(1, "name", "id");
+
+        Assert.Equal(4, rowGroup.ColumnCount);
+        Assert.Equal(2, rowGroup.ProjectedColumnCount);
+        Assert.NotNull(rowGroup.ProjectedColumnNames);
+        Assert.Equal(new[] { "name", "id" }, rowGroup.ProjectedColumnNames);
+
+        var nameColumn = Assert.IsType<StringArray>(rowGroup.ReadColumn("name"));
+        var ids = rowGroup.ReadColumn<int?>(0);
+
+        Assert.Equal("delta", nameColumn.GetString(0));
+        Assert.Equal("epsilon", nameColumn.GetString(1));
+        Assert.Equal(new int?[] { null, 5, 6 }, ids);
+    }
+
+    [Fact]
+    public void RowGroupReader_OpenWithProjectedColumnNames_IntegerReadsUseSchemaOrdinals()
+    {
+        using var source = CreateTwoRowGroupNoDecimalFile();
+        using var reader = new ParquetFileReader(source);
+        using var rowGroup = reader.OpenRowGroupReader(0, "name");
+
+        var nameColumn = Assert.IsType<StringArray>(rowGroup.ReadColumn(1));
+        var names = rowGroup.ReadColumn<string>(1);
+
+        Assert.Equal("alpha", nameColumn.GetString(0));
+        Assert.Equal(new[] { "alpha", "beta", "gamma" }, names);
+        Assert.Throws<InvalidOperationException>(() => rowGroup.ReadColumn(0));
+        Assert.Throws<InvalidOperationException>(() => rowGroup.ReadColumn<int?>(0));
+    }
+
+    [Fact]
+    public void RowGroupReader_OpenWithProjectedColumnNames_ReadsIncludedRowRangeBatches()
+    {
+        using var source = CreateTwoRowGroupNoDecimalFile();
+        using var reader = new ParquetFileReader(source, new ParquetReadOptions { BatchSize = 1 });
+        using var rowGroup = reader.OpenRowGroupReader(0, "name");
+
+        var arrowBatches = rowGroup.ReadColumnBatches(1, rowOffset: 1, rowCount: 2).Cast<StringArray>().ToArray();
+        try
+        {
+            Assert.Equal(2, arrowBatches.Length);
+            Assert.Equal("beta", arrowBatches[0].GetString(0));
+            Assert.Equal("gamma", arrowBatches[1].GetString(0));
+        }
+        finally
+        {
+            foreach (var batch in arrowBatches)
+            {
+                batch.Dispose();
+            }
+        }
+
+        var clrBatches = rowGroup.ReadColumnBatches<string>("name", rowOffset: 1, rowCount: 2).ToArray();
+
+        Assert.Equal(2, clrBatches.Length);
+        Assert.Equal(new[] { "beta" }, clrBatches[0]);
+        Assert.Equal(new[] { "gamma" }, clrBatches[1]);
+    }
+
+    [Fact]
+    public void RowGroupReader_OpenWithProjectedColumnNames_RejectsUnprojectedColumns()
+    {
+        using var source = CreateTwoRowGroupNoDecimalFile();
+        using var reader = new ParquetFileReader(source);
+        using var rowGroup = reader.OpenRowGroupReader(1, "id");
+
+        Assert.Throws<InvalidOperationException>(() => rowGroup.ReadColumn("name"));
+        Assert.Throws<InvalidOperationException>(() => rowGroup.ReadColumn<string>("name"));
+        Assert.Throws<InvalidOperationException>(() => rowGroup.ReadColumnBatches("name").ToArray());
+        Assert.Throws<InvalidOperationException>(() => rowGroup.ReadColumnBatches<string>("name").ToArray());
+        Assert.Throws<InvalidOperationException>(() => rowGroup.ReadColumnBatches("name", rowOffset: 0, rowCount: 1).ToArray());
+        Assert.Throws<InvalidOperationException>(() => rowGroup.ReadColumnBatches("name", rowOffset: 0, rowCount: 0).ToArray());
+        Assert.Throws<InvalidOperationException>(() => rowGroup.ReadColumnBatches(1).ToArray());
+        Assert.Throws<InvalidOperationException>(() => rowGroup.ReadColumnBatches<string>(1).ToArray());
+        Assert.Throws<InvalidOperationException>(() => rowGroup.ReadColumnBatches<string>(1, rowOffset: 0, rowCount: 0).ToArray());
+    }
+
+    [Fact]
+    public void FileReader_OpenRowGroupReader_RejectsInvalidColumnProjection()
+    {
+        using var source = CreateTwoRowGroupNoDecimalFile();
+        using var reader = new ParquetFileReader(source);
+
+        string[] nullProjection = null!;
+
+        Assert.Throws<ArgumentNullException>(() => reader.OpenRowGroupReader(0, nullProjection));
+        Assert.Throws<ArgumentException>(() => reader.OpenRowGroupReader(0, System.Array.Empty<string>()));
+        Assert.Throws<ArgumentException>(() => reader.OpenRowGroupReader(0, "id", "id"));
+        Assert.Throws<ArgumentException>(() => reader.OpenRowGroupReader(0, " "));
+        Assert.Throws<ArgumentOutOfRangeException>(() => reader.OpenRowGroupReader(0, "missing"));
+        Assert.Throws<ArgumentOutOfRangeException>(() => reader.OpenRowGroupReader(0, "Name"));
+    }
+
+    [Fact]
     public void RowGroupReader_ReadsClrColumnsByIndexAndName()
     {
         using var source = CreateTwoRowGroupNoDecimalFile();

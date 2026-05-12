@@ -11,14 +11,22 @@ public sealed class ParquetRowGroupReader : IDisposable
     private static readonly ArrowArrayClrMaterializer s_clrMaterializer = new();
     private readonly IntPtr _nativeRowGroupReader;
     private readonly ParquetFileReader _owner;
+    private readonly HashSet<int>? _projectedSchemaOrdinalSet;
     private bool _disposed;
 
-    internal ParquetRowGroupReader(ParquetFileReader owner, int rowGroupIndex, IntPtr nativeRowGroupReader, long rowCount)
+    internal ParquetRowGroupReader(ParquetFileReader owner, int rowGroupIndex, IntPtr nativeRowGroupReader, long rowCount, string[]? projectedColumnNames = null, int[]? projectedSchemaOrdinals = null)
     {
+        if ((projectedColumnNames is null) != (projectedSchemaOrdinals is null))
+        {
+            throw new ArgumentException("Projected column names and schema ordinals must be provided together.", nameof(projectedColumnNames));
+        }
+
         _owner = owner;
         RowGroupIndex = rowGroupIndex;
         _nativeRowGroupReader = nativeRowGroupReader;
         RowCount = rowCount;
+        ProjectedColumnNames = projectedColumnNames is null ? null : System.Array.AsReadOnly(projectedColumnNames);
+        _projectedSchemaOrdinalSet = projectedSchemaOrdinals is null ? null : new HashSet<int>(projectedSchemaOrdinals);
     }
 
     public int RowGroupIndex { get; }
@@ -27,10 +35,26 @@ public sealed class ParquetRowGroupReader : IDisposable
 
     public int ColumnCount => _owner.Schema.Columns.Count;
 
+    /// <summary>
+    /// Gets the number of columns allowed by this row-group reader's projection, or all columns when unprojected.
+    /// </summary>
+    public int ProjectedColumnCount => ProjectedColumnNames?.Count ?? ColumnCount;
+
+    /// <summary>
+    /// Gets the projected schema column names in requested order, or <see langword="null" /> when this reader is unprojected.
+    /// </summary>
+    public IReadOnlyList<string>? ProjectedColumnNames { get; }
+
+    /// <summary>
+    /// Reads an Arrow array by original schema ordinal.
+    /// </summary>
+    /// <remarks>
+    /// For projected row-group readers, <paramref name="columnIndex" /> is still the original schema ordinal, not the position within <see cref="ProjectedColumnNames" />.
+    /// </remarks>
     public IArrowArray ReadColumn(int columnIndex)
     {
         TargetFrameworkCompat.ThrowIfDisposed(_disposed, this);
-        return NativeParquetBridge.ReadColumn(_nativeRowGroupReader, _owner.GetArrowField(columnIndex));
+        return NativeParquetBridge.ReadColumn(_nativeRowGroupReader, GetProjectedArrowField(columnIndex));
     }
 
     public IArrowArray ReadColumn(string columnName)
@@ -39,11 +63,17 @@ public sealed class ParquetRowGroupReader : IDisposable
         return ReadColumn(_owner.GetColumnIndex(columnName));
     }
 
+    /// <summary>
+    /// Reads Arrow array batches by original schema ordinal.
+    /// </summary>
+    /// <remarks>
+    /// For projected row-group readers, <paramref name="columnIndex" /> is still the original schema ordinal, not the position within <see cref="ProjectedColumnNames" />.
+    /// </remarks>
     public IEnumerable<IArrowArray> ReadColumnBatches(int columnIndex)
     {
         TargetFrameworkCompat.ThrowIfDisposed(_disposed, this);
-        var field = _owner.GetArrowField(columnIndex);
-        return ReadColumnBatchesCore(field, GetReadBatchSize(), 0, null);
+        var field = GetProjectedArrowField(columnIndex);
+        return ReadColumnBatchesInternal(field, GetReadBatchSize(), 0, null);
     }
 
     public IEnumerable<IArrowArray> ReadColumnBatches(string columnName)
@@ -56,17 +86,20 @@ public sealed class ParquetRowGroupReader : IDisposable
     /// Reads Arrow array batches for a row range within this row group.
     /// The row range limits which input rows are read; read batch size still controls returned array chunking.
     /// </summary>
+    /// <remarks>
+    /// For projected row-group readers, <paramref name="columnIndex" /> is still the original schema ordinal, not the position within <see cref="ProjectedColumnNames" />.
+    /// </remarks>
     public IEnumerable<IArrowArray> ReadColumnBatches(int columnIndex, long rowOffset, long rowCount)
     {
         TargetFrameworkCompat.ThrowIfDisposed(_disposed, this);
         ValidateReadRange(rowOffset, rowCount);
+        var field = GetProjectedArrowField(columnIndex);
         if (rowCount == 0)
         {
             return Enumerable.Empty<IArrowArray>();
         }
 
-        var field = _owner.GetArrowField(columnIndex);
-        return ReadColumnBatchesCore(field, GetReadBatchSize(rowCount), rowOffset, rowCount);
+        return ReadColumnBatchesInternal(field, GetReadBatchSize(rowCount), rowOffset, rowCount);
     }
 
     /// <summary>
@@ -79,14 +112,20 @@ public sealed class ParquetRowGroupReader : IDisposable
         return ReadColumnBatches(_owner.GetColumnIndex(columnName), rowOffset, rowCount);
     }
 
+    /// <summary>
+    /// Reads a CLR array by original schema ordinal.
+    /// </summary>
+    /// <remarks>
+    /// For projected row-group readers, <paramref name="columnIndex" /> is still the original schema ordinal, not the position within <see cref="ProjectedColumnNames" />.
+    /// </remarks>
     public T[] ReadColumn<T>(int columnIndex)
     {
         TargetFrameworkCompat.ThrowIfDisposed(_disposed, this);
 
-        var field = _owner.GetArrowField(columnIndex);
+        var field = GetProjectedArrowField(columnIndex);
         ValidateRequestedClrType<T>(field);
 
-        using var array = ReadColumn(columnIndex);
+        using var array = NativeParquetBridge.ReadColumn(_nativeRowGroupReader, field);
         return (T[])s_clrMaterializer.Materialize(array, field);
     }
 
@@ -96,14 +135,20 @@ public sealed class ParquetRowGroupReader : IDisposable
         return ReadColumn<T>(_owner.GetColumnIndex(columnName));
     }
 
+    /// <summary>
+    /// Reads CLR array batches by original schema ordinal.
+    /// </summary>
+    /// <remarks>
+    /// For projected row-group readers, <paramref name="columnIndex" /> is still the original schema ordinal, not the position within <see cref="ProjectedColumnNames" />.
+    /// </remarks>
     public IEnumerable<T[]> ReadColumnBatches<T>(int columnIndex)
     {
         TargetFrameworkCompat.ThrowIfDisposed(_disposed, this);
 
-        var field = _owner.GetArrowField(columnIndex);
+        var field = GetProjectedArrowField(columnIndex);
         ValidateRequestedClrType<T>(field);
 
-        return ReadColumnBatchesCore<T>(field, GetReadBatchSize(), 0, null);
+        return ReadColumnBatchesInternal<T>(field, GetReadBatchSize(), 0, null);
     }
 
     public IEnumerable<T[]> ReadColumnBatches<T>(string columnName)
@@ -116,19 +161,21 @@ public sealed class ParquetRowGroupReader : IDisposable
     /// Reads CLR array batches for a row range within this row group.
     /// The row range limits which input rows are read; read batch size still controls returned array chunking.
     /// </summary>
+    /// <remarks>
+    /// For projected row-group readers, <paramref name="columnIndex" /> is still the original schema ordinal, not the position within <see cref="ProjectedColumnNames" />.
+    /// </remarks>
     public IEnumerable<T[]> ReadColumnBatches<T>(int columnIndex, long rowOffset, long rowCount)
     {
         TargetFrameworkCompat.ThrowIfDisposed(_disposed, this);
         ValidateReadRange(rowOffset, rowCount);
+        var field = GetProjectedArrowField(columnIndex);
+        ValidateRequestedClrType<T>(field);
         if (rowCount == 0)
         {
             return Enumerable.Empty<T[]>();
         }
 
-        var field = _owner.GetArrowField(columnIndex);
-        ValidateRequestedClrType<T>(field);
-
-        return ReadColumnBatchesCore<T>(field, GetReadBatchSize(rowCount), rowOffset, rowCount);
+        return ReadColumnBatchesInternal<T>(field, GetReadBatchSize(rowCount), rowOffset, rowCount);
     }
 
     /// <summary>
@@ -174,6 +221,17 @@ public sealed class ParquetRowGroupReader : IDisposable
         return typeof(Nullable<>).MakeGenericType(expectedType);
     }
 
+    private Field GetProjectedArrowField(int columnIndex)
+    {
+        var field = _owner.GetArrowField(columnIndex);
+        if (_projectedSchemaOrdinalSet is not null && !_projectedSchemaOrdinalSet.Contains(columnIndex))
+        {
+            throw new InvalidOperationException($"Column '{field.Name}' at index {columnIndex} is not included in this row-group reader's column projection.");
+        }
+
+        return field;
+    }
+
     private int GetReadBatchSize()
     {
         return GetReadBatchSize(RowCount);
@@ -212,7 +270,7 @@ public sealed class ParquetRowGroupReader : IDisposable
         }
     }
 
-    private IEnumerable<IArrowArray> ReadColumnBatchesCore(Field field, int batchSize, long rowOffset, long? rowCount)
+    private IEnumerable<IArrowArray> ReadColumnBatchesInternal(Field field, int batchSize, long rowOffset, long? rowCount)
     {
         var batchReader = NativeParquetBridge.OpenColumnBatchReader(_nativeRowGroupReader, field, batchSize, rowOffset, rowCount);
         try
@@ -235,9 +293,9 @@ public sealed class ParquetRowGroupReader : IDisposable
         }
     }
 
-    private IEnumerable<T[]> ReadColumnBatchesCore<T>(Field field, int batchSize, long rowOffset, long? rowCount)
+    private IEnumerable<T[]> ReadColumnBatchesInternal<T>(Field field, int batchSize, long rowOffset, long? rowCount)
     {
-        foreach (var batch in ReadColumnBatchesCore(field, batchSize, rowOffset, rowCount))
+        foreach (var batch in ReadColumnBatchesInternal(field, batchSize, rowOffset, rowCount))
         {
             using (batch)
             {

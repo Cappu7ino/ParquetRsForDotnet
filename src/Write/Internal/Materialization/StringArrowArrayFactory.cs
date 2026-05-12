@@ -24,10 +24,10 @@ internal static class StringArrowArrayFactory
             }
         }
 
-        return BuildCore(values, hasNulls);
+        return BuildInternal(values, hasNulls);
     }
 
-    private static StringArray BuildCore(IReadOnlyList<string?> values, bool hasNulls)
+    private static StringArray BuildInternal(IReadOnlyList<string?> values, bool hasNulls)
     {
         var totalByteCount = 0;
         var nullCount = 0;

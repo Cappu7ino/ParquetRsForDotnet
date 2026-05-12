@@ -41,16 +41,72 @@ public sealed class ParquetFileReader : IDisposable
 
     public ParquetRowGroupReader OpenRowGroupReader(int rowGroupIndex)
     {
+        ValidateRowGroupIndex(rowGroupIndex);
+        return OpenRowGroupReaderInternal(rowGroupIndex, null, null);
+    }
+
+    /// <summary>
+    /// Opens a row-group reader constrained to the specified schema column names.
+    /// </summary>
+    /// <remarks>
+    /// Projection is selected by column name only. Integer read APIs on the returned reader still use original schema ordinals.
+    /// </remarks>
+    public ParquetRowGroupReader OpenRowGroupReader(int rowGroupIndex, params string[] projectedColumnNames)
+    {
+        ValidateRowGroupIndex(rowGroupIndex);
+        var projectedSchemaOrdinals = ResolveProjectedColumnNameProjection(projectedColumnNames, out var projectedColumnNamesCopy);
+        return OpenRowGroupReaderInternal(rowGroupIndex, projectedColumnNamesCopy, projectedSchemaOrdinals);
+    }
+
+    private ParquetRowGroupReader OpenRowGroupReaderInternal(int rowGroupIndex, string[]? projectedColumnNames, int[]? projectedSchemaOrdinals)
+    {
+        var nativeRowGroupReader = NativeParquetBridge.OpenRowGroupReader(_nativeReader, rowGroupIndex);
+        var rowCount = NativeParquetBridge.GetRowGroupReaderRowCount(nativeRowGroupReader);
+        return new ParquetRowGroupReader(this, rowGroupIndex, nativeRowGroupReader, rowCount, projectedColumnNames, projectedSchemaOrdinals);
+    }
+
+    private void ValidateRowGroupIndex(int rowGroupIndex)
+    {
         TargetFrameworkCompat.ThrowIfDisposed(_disposed, this);
 
         if ((uint)rowGroupIndex >= (uint)RowGroupCount)
         {
             throw new ArgumentOutOfRangeException(nameof(rowGroupIndex), rowGroupIndex, $"Row group index must be in the range 0..{RowGroupCount - 1}.");
         }
+    }
 
-        var nativeRowGroupReader = NativeParquetBridge.OpenRowGroupReader(_nativeReader, rowGroupIndex);
-        var rowCount = NativeParquetBridge.GetRowGroupReaderRowCount(nativeRowGroupReader);
-        return new ParquetRowGroupReader(this, rowGroupIndex, nativeRowGroupReader, rowCount);
+    private int[] ResolveProjectedColumnNameProjection(string[] projectedColumnNames, out string[] projectedColumnNamesCopy)
+    {
+        TargetFrameworkCompat.ThrowIfNull(projectedColumnNames);
+
+        if (projectedColumnNames.Length == 0)
+        {
+            throw new ArgumentException("Column projection must include at least one column name.", nameof(projectedColumnNames));
+        }
+
+        projectedColumnNamesCopy = new string[projectedColumnNames.Length];
+        var projectedSchemaOrdinals = new int[projectedColumnNames.Length];
+        var seenSchemaOrdinals = new HashSet<int>();
+
+        for (var i = 0; i < projectedColumnNames.Length; i++)
+        {
+            var columnName = projectedColumnNames[i];
+            if (string.IsNullOrWhiteSpace(columnName))
+            {
+                throw new ArgumentException("Projected column names cannot contain null, empty, or whitespace values.", nameof(projectedColumnNames));
+            }
+
+            var schemaOrdinal = GetColumnIndex(columnName);
+            if (!seenSchemaOrdinals.Add(schemaOrdinal))
+            {
+                throw new ArgumentException($"Column projection contains duplicate column '{Schema.Columns[schemaOrdinal].Name}'.", nameof(projectedColumnNames));
+            }
+
+            projectedColumnNamesCopy[i] = Schema.Columns[schemaOrdinal].Name;
+            projectedSchemaOrdinals[i] = schemaOrdinal;
+        }
+
+        return projectedSchemaOrdinals;
     }
 
     internal Field GetArrowField(int columnIndex)

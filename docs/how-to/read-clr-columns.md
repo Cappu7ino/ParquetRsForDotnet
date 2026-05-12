@@ -22,6 +22,21 @@ SqlDecimal?[] amounts = rowGroup.ReadColumn<SqlDecimal?>("amount");
 - Decimal columns use `SqlDecimal` / `SqlDecimal?`.
 - Date columns use `DateOnly` on `net8.0` and `DateTime` on `netstandard2.0`.
 
+## Projected Row Groups
+
+Pass column names when opening a row-group reader to constrain the reader to the columns that can be read.
+
+```csharp
+using var input = File.OpenRead("orders.parquet");
+using var reader = new ParquetFileReader(input);
+using var rowGroup = reader.OpenRowGroupReader(0, "id", "amount");
+
+int[] ids = rowGroup.ReadColumn<int>("id");
+SqlDecimal?[] amounts = rowGroup.ReadColumn<SqlDecimal?>("amount");
+```
+
+Projection is name-based. Integer column reads still use original schema ordinals, and reads for columns outside the projection throw `InvalidOperationException`.
+
 ## Large Columns
 
 Use batched CLR reads to reduce peak memory. `BatchSize` controls how many rows each returned managed array contains; without a row range, the reader still walks the full selected column in the opened row group.
